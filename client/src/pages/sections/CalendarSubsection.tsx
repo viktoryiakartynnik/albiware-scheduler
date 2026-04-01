@@ -283,11 +283,13 @@ interface RowCellProps {
   chips: CellChip[];
   isSuggestedRow?: boolean;
   maxColumns: number;
+  rowIndex: number;
 }
 
-const CELL_WIDTH = 283;
+const CELL_WIDTH = 160;
+const ROW_LABEL_W = 150;
 
-const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow, maxColumns }: RowCellProps) => {
+const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow, maxColumns, rowIndex }: RowCellProps) => {
   const {
     availabilityMode,
     availableTimeColumns,
@@ -319,15 +321,16 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow, maxColumns }: Ro
   const isSelected = selectedSlot?.staffName === staffName && selectedSlot?.timeLabel === timeLabel;
   const isDragTarget = dragOverCell?.staffName === staffName && dragOverCell?.timeLabel === timeLabel;
 
-  let bgClass = "bg-[#f8f9fa]";
+  const stripeBg = rowIndex % 2 === 0 ? "bg-white" : "bg-[#f9fafb]";
+  let bgClass = stripeBg;
   if (isDragTarget)   bgClass = "bg-[#eff6ff] ring-2 ring-inset ring-[#3b82f6]";
   else if (isSelected) bgClass = "bg-[#bfdbfe] ring-2 ring-inset ring-[#0065f4]";
   else if (availabilityMode && isSuggestedRow && isInRange && isEmpty)
     bgClass = "bg-[#fffbeb] hover:bg-[#fef3c7] cursor-pointer";
   else if (availabilityMode && isEmpty && isInRange)
-    bgClass = "bg-[#f8f9fa] hover:bg-[#f3f8ff] cursor-pointer";
+    bgClass = `${stripeBg} hover:bg-[#f3f8ff] cursor-pointer`;
   else if (availabilityMode && !isInRange)
-    bgClass = "bg-[#f8f9fa] opacity-50";
+    bgClass = `${stripeBg} opacity-50`;
   else if (isConflict) bgClass = "bg-[#fff7ed]";
 
   const canClickSlot = availabilityMode && isEmpty && isInRange && !isSelected;
@@ -853,15 +856,15 @@ export const CalendarSubsection = ({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: `140px repeat(${colCount}, ${CELL_WIDTH}px)`,
-            gridTemplateRows: `36px repeat(${displayedStaff.length}, auto)`,
+            gridTemplateColumns: `${ROW_LABEL_W}px repeat(${colCount}, ${CELL_WIDTH}px)`,
+            gridTemplateRows: `40px repeat(${displayedStaff.length}, auto)`,
             width: "max-content",
             minWidth: "100%",
           }}
         >
           {/* Corner */}
           <div
-            className="sticky top-0 left-0 z-30 bg-white border-b border-r border-[#dcdfe3]"
+            className="sticky top-0 left-0 z-30 bg-[#f5f6f7] border-b-2 border-b-[#c8cdd3] border-r border-r-[#dcdfe3]"
             style={{ gridColumn: 1, gridRow: 1 }}
           />
 
@@ -871,22 +874,22 @@ export const CalendarSubsection = ({
             return (
               <div
                 key={time}
-                className={`sticky top-0 z-20 border-b border-r border-[#dcdfe3] flex items-center px-3 transition-colors ${
+                className={`sticky top-0 z-20 border-b-2 border-r border-[#dcdfe3] flex flex-col items-center justify-center transition-colors ${
                   availabilityMode && inRange
-                    ? "bg-[#eff6ff]"
+                    ? "border-b-[#3b82f6] bg-[#eff6ff]"
                     : availabilityMode
-                    ? "bg-white opacity-60"
-                    : "bg-white"
+                    ? "border-b-[#c8cdd3] bg-[#f5f6f7] opacity-60"
+                    : "border-b-[#c8cdd3] bg-[#f5f6f7]"
                 }`}
                 style={{ gridColumn: ci + 2, gridRow: 1 }}
               >
-                <span className={`[font-family:'Inter',Helvetica] font-medium text-sm ${
-                  availabilityMode && inRange ? "text-[#1d4ed8]" : "text-[#0e1828]"
+                <span className={`[font-family:'Inter',Helvetica] font-semibold text-xs tracking-wide ${
+                  availabilityMode && inRange ? "text-[#1d4ed8]" : "text-[#5c6675]"
                 }`}>
                   {time}
                 </span>
                 {availabilityMode && inRange && (
-                  <span className="ml-1.5 text-[8px] font-bold text-[#3b82f6] leading-none">✓</span>
+                  <span className="text-[8px] font-bold text-[#3b82f6] leading-none mt-0.5">OPEN</span>
                 )}
               </div>
             );
@@ -906,14 +909,15 @@ export const CalendarSubsection = ({
                 }).length
               : 0;
 
+            const rowStripeBg = si % 2 === 0 ? "bg-white" : "bg-[#f9fafb]";
             return (
               <React.Fragment key={staff}>
                 {/* Staff name cell */}
                 <div
-                  className={`sticky left-0 z-10 border-b border-r border-[#dcdfe3] flex items-center justify-between px-3 transition-colors ${
+                  className={`sticky left-0 z-10 border-b border-r border-[#dcdfe3] flex items-center justify-between px-2.5 min-h-[52px] transition-colors ${
                     isSuggested
                       ? "bg-[#fffbeb] border-l-[3px] border-l-[#f59e0b]"
-                      : "bg-white"
+                      : rowStripeBg
                   }`}
                   style={{ gridColumn: 1, gridRow: si + 2 }}
                 >
@@ -952,7 +956,7 @@ export const CalendarSubsection = ({
                     return (
                       <div
                         key={`${staff}-${time}-cont`}
-                        className="border-b border-r border-[#dcdfe3] min-h-[52px]"
+                        className={`border-b border-r border-[#dcdfe3] min-h-[52px] ${rowStripeBg}`}
                         style={{ gridColumn: ci + 2, gridRow: si + 2 }}
                       />
                     );
@@ -997,6 +1001,7 @@ export const CalendarSubsection = ({
                         chips={allChips}
                         isSuggestedRow={isSuggested}
                         maxColumns={maxCols}
+                        rowIndex={si}
                       />
                     </div>
                   );

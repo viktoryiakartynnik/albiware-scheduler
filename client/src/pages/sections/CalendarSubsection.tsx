@@ -52,10 +52,16 @@ interface CalendarContextType {
   onDragOverCell: (staffName: string, timeLabel: string) => void;
   onDragLeaveCell: () => void;
   onDropOnCell: (targetStaff: string, targetTime: string) => void;
+  onDropUnassigned: (card: UnassignedCard, targetStaff: string, targetTime: string) => void;
   // chip duration resize (absolute value)
   chipDurations: Record<string, number>;
   onDurationChange: (chipKey: string, absoluteDuration: number) => void;
+  // chip left-offset (how many columns the chip extends to the left of its origin)
+  chipStartOffsets: Record<string, number>;
+  onStartOffsetChange: (chipKey: string, offset: number) => void;
   continuationCells: Set<string>;
+  // add new event to an occupied cell
+  onAddToCell: (staffName: string, timeLabel: string) => void;
 }
 
 const CalendarContext = createContext<CalendarContextType>({
@@ -67,7 +73,6 @@ const CalendarContext = createContext<CalendarContextType>({
   onDoubleClickSlot: () => {},
   onConflictClick: () => {},
   onChipClick: () => {},
-  // ^ default no-op, override in provider
   customEvents: [],
   dragSourceKey: null,
   dragOverCell: null,
@@ -76,12 +81,23 @@ const CalendarContext = createContext<CalendarContextType>({
   onDragOverCell: () => {},
   onDragLeaveCell: () => {},
   onDropOnCell: () => {},
+  onDropUnassigned: () => {},
   chipDurations: {},
   onDurationChange: () => {},
+  chipStartOffsets: {},
+  onStartOffsetChange: () => {},
   continuationCells: new Set(),
+  onAddToCell: () => {},
 });
 
 // ─── Props ────────────────────────────────────────────────────────────────────
+
+export interface UnassignedCard {
+  title: string;
+  reference: string;
+  dateRange: string;
+  color?: { bg: string; border: string };
+}
 
 export interface CalendarSubsectionProps {
   availabilityMode?: boolean;
@@ -92,6 +108,7 @@ export interface CalendarSubsectionProps {
   onConflictClick?: (staffName: string, timeLabel: string, events: string[]) => void;
   onChipClick?: (staffName: string, timeLabel: string, chip: CellChip, chipIndex: number) => void;
   onChipMoved?: (drag: DragChipData, targetStaff: string, targetTime: string) => void;
+  onUnassignedDrop?: (card: UnassignedCard, targetStaff: string, targetTime: string) => void;
   customEvents?: CustomEventData[];
   removedBaseChips?: Set<string>;
 }
@@ -288,6 +305,10 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow, maxColumns }: Ro
     onDropOnCell,
     chipDurations,
     onDurationChange,
+    chipStartOffsets,
+    onStartOffsetChange,
+    onAddToCell,
+    onDropUnassigned,
   } = useContext(CalendarContext);
 
   const [hoveredChipIdx, setHoveredChipIdx] = useState<number | null>(null);
@@ -313,7 +334,7 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow, maxColumns }: Ro
 
   return (
     <div
-      className={`relative min-h-[36px] h-auto border-b border-r border-[#dcdfe3] overflow-visible flex items-center transition-colors ${bgClass} ${
+      className={`relative min-h-[52px] h-auto border-b border-r border-[#dcdfe3] overflow-visible flex items-center transition-colors ${bgClass} ${
         canClickSlot ? "group" : ""
       }`}
       style={{ width: "100%" }}
@@ -327,7 +348,12 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow, maxColumns }: Ro
       onDragLeave={() => onDragLeaveCell()}
       onDrop={(e) => {
         e.preventDefault();
-        onDropOnCell(staffName, timeLabel);
+        const raw = e.dataTransfer.getData("unassigned");
+        if (raw) {
+          try { onDropUnassigned(JSON.parse(raw), staffName, timeLabel); } catch {}
+        } else {
+          onDropOnCell(staffName, timeLabel);
+        }
       }}
       data-testid={`cell-${staffName}-${timeLabel}`}
     >
@@ -338,11 +364,40 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow, maxColumns }: Ro
         const isDragSource = dragSourceKey === chipKey;
         const statusBadge = chip.status ? STATUS_BADGE[chip.status] : null;
         const dur = chipDurations[chipKey] || 1;
+        const leftOffset = chipStartOffsets[chipKey] || 0;
         return (
-          <div className="flex items-center h-[33px] gap-px relative top-px pl-px w-full overflow-visible">
-            <div className="relative h-[33px] group/chip min-w-0" style={{ flex: 1 }}>
+          <div className="flex items-center h-[46px] gap-px relative top-px pl-px w-full overflow-visible group/cell">
+            <div className="relative h-[46px] group/chip min-w-0" style={{ flex: 1 }}>
+              {/* Left resize handle */}
               <div
-                className={`flex items-center pl-2 pr-4 pt-0.5 pb-1 overflow-hidden border-l-4 border-solid h-[33px] rounded cursor-grab transition-all duration-100 w-full select-none ${isDragSource ? "opacity-30" : ""}`}
+                className="absolute left-0 top-0 bottom-0 w-3 z-20 flex items-center justify-center cursor-ew-resize opacity-0 group-hover/chip:opacity-100 transition-opacity"
+                title="Drag to shift start time"
+                onMouseDown={(e) => {
+                  e.preventDefault(); e.stopPropagation();
+                  const startX = e.clientX;
+                  const startOffset = chipStartOffsets[chipKey] || 0;
+                  const startDur = chipDurations[chipKey] || 1;
+                  let lastOffset = startOffset;
+                  const onMouseMove = (me: MouseEvent) => {
+                    const delta = -Math.round((me.clientX - startX) / CELL_WIDTH);
+                    const newOffset = Math.max(0, Math.min(startOffset + delta, startDur - 1));
+                    const durChange = newOffset - startOffset;
+                    if (newOffset !== lastOffset) {
+                      lastOffset = newOffset;
+                      onStartOffsetChange(chipKey, newOffset);
+                      onDurationChange(chipKey, Math.max(1, startDur + durChange));
+                    }
+                  };
+                  const onMouseUp = () => { window.removeEventListener("mousemove", onMouseMove); window.removeEventListener("mouseup", onMouseUp); };
+                  window.addEventListener("mousemove", onMouseMove);
+                  window.addEventListener("mouseup", onMouseUp);
+                }}
+              >
+                <div className="w-0.5 h-5 bg-black/40 rounded-full" />
+              </div>
+
+              <div
+                className={`flex items-center pl-4 pr-4 overflow-hidden border-l-4 border-solid h-[46px] rounded cursor-grab transition-all duration-100 w-full select-none ${isDragSource ? "opacity-30" : ""}`}
                 style={{
                   backgroundColor: hoveredChipIdx === 0 ? lightenColor(chip.bg) : chip.bg,
                   borderLeftColor: chip.border,
@@ -369,9 +424,11 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow, maxColumns }: Ro
                   })()}
                 </div>
               </div>
-              {/* Resize handle */}
+
+              {/* Right resize handle */}
               <div
-                className="absolute right-0 top-0 bottom-0 w-3 z-20 flex items-center justify-center cursor-ew-resize"
+                className="absolute right-0 top-0 bottom-0 w-3 z-20 flex items-center justify-center cursor-ew-resize opacity-0 group-hover/chip:opacity-100 transition-opacity"
+                title="Drag to change duration"
                 onMouseDown={(e) => {
                   e.preventDefault(); e.stopPropagation();
                   const startX = e.clientX;
@@ -387,8 +444,9 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow, maxColumns }: Ro
                   window.addEventListener("mouseup", onMouseUp);
                 }}
               >
-                <div className="w-0.5 h-5 bg-black/30 rounded-full group-hover/chip:bg-black/50" />
+                <div className="w-0.5 h-5 bg-black/40 rounded-full" />
               </div>
+
               {/* Tooltip */}
               {hoveredChipIdx === 0 && !isDragSource && (
                 <div className="absolute bottom-full left-0 mb-1 z-50 pointer-events-none" style={{ minWidth: 200, maxWidth: 300 }}>
@@ -396,13 +454,23 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow, maxColumns }: Ro
                     <p className="text-xs font-bold text-[#0e1828] leading-snug mb-1 font-['Inter',sans-serif]">{chip.label}</p>
                     <div className="flex items-center gap-2 text-[10px] text-[#6b7280] font-['Inter',sans-serif]">
                       <span>{staffName}</span><span>·</span><span>{timeLabel}</span>
-                      {dur > 1 && <><span>·</span><span className="text-[#7c3aed] font-semibold">{dur}h duration</span></>}
+                      {dur > 1 && <><span>·</span><span className="text-[#7c3aed] font-semibold">{dur}h</span></>}
                     </div>
-                    <p className="text-[10px] text-[#6b7280] mt-1 font-['Inter',sans-serif]">Click to view · Drag to reschedule · Drag right edge to resize</p>
+                    <p className="text-[10px] text-[#6b7280] mt-1 font-['Inter',sans-serif]">Click to view · Drag to reschedule · ← → edge to resize</p>
                   </div>
                   <div className="absolute left-3 top-full w-0 h-0" style={{ borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "5px solid #e8e8e8" }} />
                 </div>
               )}
+
+              {/* + Add button overlay (top-right corner, appears on cell hover) */}
+              <button
+                className="absolute top-0.5 right-4 z-30 w-5 h-5 rounded bg-white/80 border border-[#d1d5db] flex items-center justify-center opacity-0 group-hover/cell:opacity-100 transition-opacity hover:bg-[#0065f4] hover:border-[#0065f4] hover:text-white text-[#6b7280]"
+                title="Add another job to this time slot"
+                onClick={(e) => { e.stopPropagation(); onAddToCell(staffName, timeLabel); }}
+                data-testid={`add-to-cell-${staffName}-${timeLabel}`}
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M5 1v8M1 5h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+              </button>
             </div>
           </div>
         );
@@ -410,7 +478,15 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow, maxColumns }: Ro
 
       {/* Stacked chips — conflict layout */}
       {chips.length > 1 && (
-        <div className="flex flex-col gap-px py-0.5 px-0.5 w-full">
+        <div className="relative flex flex-col gap-px py-0.5 px-0.5 w-full group/cell">
+          {/* + Add button for occupied cells */}
+          <button
+            className="absolute top-0.5 right-0.5 z-30 w-5 h-5 rounded bg-white/90 border border-[#d1d5db] flex items-center justify-center opacity-0 group-hover/cell:opacity-100 transition-opacity hover:bg-[#0065f4] hover:border-[#0065f4] hover:text-white text-[#6b7280]"
+            title="Add another job to this time slot"
+            onClick={(e) => { e.stopPropagation(); onAddToCell(staffName, timeLabel); }}
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M5 1v8M1 5h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+          </button>
           {chips.map((chip, i) => {
             const chipKey = `${staffName}||${timeLabel}||${i}`;
             const isDragSource = dragSourceKey === chipKey;
@@ -533,12 +609,14 @@ export const CalendarSubsection = ({
   onConflictClick = () => {},
   onChipClick = () => {},
   onChipMoved,
+  onUnassignedDrop,
   customEvents = [],
   removedBaseChips = new Set(),
 }: CalendarSubsectionProps): JSX.Element => {
 
   // ── Chip durations state ─────────────────────────────────────────────────────
   const [chipDurations, setChipDurations] = useState<Record<string, number>>({});
+  const [chipStartOffsets, setChipStartOffsets] = useState<Record<string, number>>({});
 
   const handleDurationChange = useCallback((chipKey: string, absoluteDuration: number) => {
     setChipDurations((prev) => ({
@@ -547,18 +625,26 @@ export const CalendarSubsection = ({
     }));
   }, []);
 
+  const handleStartOffsetChange = useCallback((chipKey: string, offset: number) => {
+    setChipStartOffsets((prev) => ({ ...prev, [chipKey]: Math.max(0, offset) }));
+  }, []);
+
   // ── Drag state ──────────────────────────────────────────────────────────────
   const dragDataRef = useRef<DragChipData | null>(null);
   const [dragSourceKey, setDragSourceKey] = useState<string | null>(null);
   const [dragOverCell, setDragOverCell] = useState<{ staffName: string; timeLabel: string } | null>(null);
+  // tracks whether current drag is an unassigned card (vs a grid chip)
+  const unassignedDragRef = useRef<UnassignedCard | null>(null);
 
   const handleStartDrag = useCallback((data: DragChipData) => {
     dragDataRef.current = data;
+    unassignedDragRef.current = null;
     setDragSourceKey(`${data.staffName}||${data.timeLabel}||${data.chipIndex}`);
   }, []);
 
   const handleEndDrag = useCallback(() => {
     dragDataRef.current = null;
+    unassignedDragRef.current = null;
     setDragSourceKey(null);
     setDragOverCell(null);
   }, []);
@@ -576,10 +662,21 @@ export const CalendarSubsection = ({
     setDragSourceKey(null);
     setDragOverCell(null);
     dragDataRef.current = null;
+    unassignedDragRef.current = null;
     if (!drag) return;
     if (drag.staffName === targetStaff && drag.timeLabel === targetTime) return;
     onChipMoved?.(drag, targetStaff, targetTime);
   }, [onChipMoved]);
+
+  const handleDropUnassigned = useCallback((card: UnassignedCard, targetStaff: string, targetTime: string) => {
+    setDragOverCell(null);
+    onUnassignedDrop?.(card, targetStaff, targetTime);
+  }, [onUnassignedDrop]);
+
+  // Called by the "+" button on occupied cells — opens modal for that slot
+  const handleAddToCell = useCallback((staffName: string, timeLabel: string) => {
+    onDoubleClickSlot(staffName, timeLabel);
+  }, [onDoubleClickSlot]);
 
   // ── Availability ────────────────────────────────────────────────────────────
   const availableTimeColumns = useMemo<Set<string>>(() => {
@@ -695,9 +792,13 @@ export const CalendarSubsection = ({
         onDragOverCell: handleDragOverCell,
         onDragLeaveCell: handleDragLeaveCell,
         onDropOnCell: handleDropOnCell,
+        onDropUnassigned: handleDropUnassigned,
         chipDurations,
         onDurationChange: handleDurationChange,
+        chipStartOffsets,
+        onStartOffsetChange: handleStartOffsetChange,
         continuationCells,
+        onAddToCell: handleAddToCell,
       }}
     >
       <div
@@ -753,7 +854,7 @@ export const CalendarSubsection = ({
           style={{
             display: "grid",
             gridTemplateColumns: `140px repeat(${colCount}, ${CELL_WIDTH}px)`,
-            gridTemplateRows: `36px repeat(${displayedStaff.length}, 36px)`,
+            gridTemplateRows: `36px repeat(${displayedStaff.length}, auto)`,
             width: "max-content",
             minWidth: "100%",
           }}

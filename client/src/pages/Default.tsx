@@ -7,7 +7,7 @@ import projectsIcon from "@assets/projects_1775055102572.png";
 import assetsIcon from "@assets/assets_1775055102572.png";
 import relationshipsIcon from "@assets/relationships_1775055102572.png";
 import { Button } from "@/components/ui/button";
-import { CalendarSubsection, CustomEventData, CellChip, DragChipData } from "./sections/CalendarSubsection";
+import { CalendarSubsection, CustomEventData, CellChip, DragChipData, UnassignedCard } from "./sections/CalendarSubsection";
 import { FrameSubsection } from "./sections/FrameSubsection";
 import { FrameWrapperSubsection } from "./sections/FrameWrapperSubsection";
 import { ViewControlsSubsection } from "./sections/ViewControlsSubsection";
@@ -385,6 +385,21 @@ export const Default = (): JSX.Element => {
     showSuccess(`"${chip.label}" deleted`);
   };
 
+  // ─── Unassigned event drop onto grid ─────────────────────────────────────
+  const handleUnassignedDrop = (card: UnassignedCard, targetStaff: string, targetTime: string) => {
+    const defaultColor = card.color || { bg: "#fcf1d9", border: "#eca203" };
+    const newChip: CustomEventData = {
+      id: `unassigned-${Date.now()}`,
+      staffName: targetStaff,
+      startTime: targetTime,
+      title: card.title,
+      color: defaultColor,
+      status: "new" as const,
+    };
+    setCustomEvents((prev) => [...prev, newChip]);
+    showSuccess(`"${card.title}" assigned to ${targetStaff} at ${targetTime}`);
+  };
+
   // ─── Job Detail → Duplicate ─────────────────────────────────────────────
   const handleJobDetailDuplicate = () => {
     if (!jobDetailPayload) return;
@@ -515,7 +530,7 @@ export const Default = (): JSX.Element => {
         <div className="px-6 pb-4 flex-shrink-0">
           <div className="flex items-center justify-between mb-1.5">
             <p className="text-xs text-[#9ca3af] font-['Inter',sans-serif]">
-              Hover a job to preview · Click to view details · Double-click cell to add · Drag to reschedule
+              Click job to view · Double-click or + button to add · Drag to reschedule · ← → edge to resize · Drag unassigned cards onto grid to assign
             </p>
             {customEvents.length > 0 && (
               <span className="text-xs font-semibold text-[#0065f4] font-['Inter',sans-serif]">
@@ -533,6 +548,7 @@ export const Default = (): JSX.Element => {
             onConflictClick={handleConflictCellClick}
             onChipClick={handleChipClick}
             onChipMoved={handleChipMoved}
+            onUnassignedDrop={handleUnassignedDrop}
             customEvents={customEvents}
             removedBaseChips={removedBaseChips}
           />

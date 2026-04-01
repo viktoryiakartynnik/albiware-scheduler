@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
-  PlusIcon, CalendarIcon, UsersIcon, BriefcaseIcon,
-  MapPinIcon, SettingsIcon, CheckCircle2, X, Search
+  PlusIcon, CalendarDaysIcon, Users2Icon, ClipboardListIcon,
+  MapIcon, Settings2Icon, CheckCircle2, X, Search
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CalendarSubsection, CustomEventData, CellChip, DragChipData } from "./sections/CalendarSubsection";
@@ -13,12 +13,11 @@ import { NewEventModal, NewEventData, PrefilledSlot } from "./sections/NewEventM
 import { ConflictResolutionDialog } from "./sections/ConflictResolutionDialog";
 import { JobDetailModal, JobDetailPayload } from "./sections/JobDetailModal";
 
-const navItems = [
-  { icon: CalendarIcon,  label: "Scheduler", active: true },
-  { icon: UsersIcon,     label: "Customers" },
-  { icon: BriefcaseIcon, label: "Jobs" },
-  { icon: MapPinIcon,    label: "Map" },
-  { icon: SettingsIcon,  label: "Settings" },
+const mainNavItems = [
+  { icon: CalendarDaysIcon, label: "Scheduler", active: true },
+  { icon: Users2Icon,       label: "Customers" },
+  { icon: ClipboardListIcon,label: "Jobs" },
+  { icon: MapIcon,          label: "Map" },
 ];
 
 // Base occupied slots — drives staff-availability checks
@@ -307,38 +306,56 @@ export const Default = (): JSX.Element => {
   return (
     <div className="w-[1440px] min-h-screen flex gap-0 bg-[#f8f9fa]">
       {/* ── Sidebar ── */}
-      <aside className="w-[78px] min-h-screen flex flex-col items-center bg-white border-r border-[#e8e8e8] flex-shrink-0 pt-3">
-        <div className="flex items-center justify-center w-full h-[72px]">
-          <div className="w-10 h-10 rounded-lg bg-[#0065f4] flex items-center justify-center shadow-md">
-            <span className="text-white font-black text-sm leading-none select-none">A</span>
+      <aside className="w-[72px] min-h-screen flex flex-col items-center bg-[#0f1f3d] border-r border-[#1a3060] flex-shrink-0">
+        {/* Logo */}
+        <div className="flex items-center justify-center w-full h-[60px] border-b border-[#1a3060]">
+          <div className="w-9 h-9 rounded-xl bg-[#0065f4] flex items-center justify-center shadow-lg">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M10 2L3 16h4.5l1.5-3.5h2L12.5 16H17L10 2z" fill="white"/>
+              <path d="M7.5 10.5h5" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
           </div>
         </div>
-        <nav className="flex flex-col items-center w-full gap-1 px-2">
-          {navItems.map((item) => {
+
+        {/* Main nav */}
+        <nav className="flex flex-col items-center w-full gap-0.5 px-2 pt-3 flex-1">
+          {mainNavItems.map((item) => {
             const Icon = item.icon;
             return (
               <button
                 key={item.label}
-                className={`flex flex-col items-center justify-center w-full h-12 rounded-lg gap-0.5 transition-colors ${
+                className={`flex flex-col items-center justify-center w-full h-[52px] rounded-lg gap-1 transition-colors ${
                   item.active
-                    ? "bg-[#e5effd] text-[#0065f4]"
-                    : "text-[#6b7280] hover:bg-[#f3f4f6] hover:text-[#344153]"
+                    ? "bg-[#0065f4] text-white"
+                    : "text-[#8fa5cc] hover:bg-[#1a3060] hover:text-white"
                 }`}
                 title={item.label}
                 data-testid={`nav-${item.label.toLowerCase()}`}
               >
-                <Icon className="w-5 h-5" />
-                <span className="text-[9px] font-medium leading-none">{item.label}</span>
+                <Icon className="w-[18px] h-[18px]" />
+                <span className="text-[9px] font-medium leading-none tracking-wide uppercase">{item.label}</span>
               </button>
             );
           })}
         </nav>
+
+        {/* Bottom: Settings */}
+        <div className="flex flex-col items-center w-full gap-0.5 px-2 pb-4">
+          <button
+            className="flex flex-col items-center justify-center w-full h-[52px] rounded-lg gap-1 text-[#8fa5cc] hover:bg-[#1a3060] hover:text-white transition-colors"
+            title="Settings"
+            data-testid="nav-settings"
+          >
+            <Settings2Icon className="w-[18px] h-[18px]" />
+            <span className="text-[9px] font-medium leading-none tracking-wide uppercase">Settings</span>
+          </button>
+        </div>
       </aside>
 
       {/* ── Main content ── */}
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
         {/* Top bar */}
-        <div className="flex-shrink-0">
+        <div className="flex-shrink-0 bg-white border-b border-[#e8e8e8] px-6 py-3 h-[60px] flex items-center">
           <FrameSubsection />
         </div>
 

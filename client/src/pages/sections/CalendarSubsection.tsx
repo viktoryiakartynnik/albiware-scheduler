@@ -10,6 +10,7 @@ export interface CustomEventData {
   id: string;
   staffName: string;
   startTime: string;
+  endTime?: string;          // drives column-span when set
   title: string;
   color: { bg: string; border: string };
   status?: "new" | "moved" | "rescheduled";
@@ -380,26 +381,31 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow, maxColumns, rowI
         const dur = chipDurations[chipKey] || 1;
         const leftOffset = chipStartOffsets[chipKey] || 0;
         return (
-          <div className="flex items-center h-[46px] gap-px relative top-px pl-px w-full overflow-visible group/cell">
+          <div
+            className="flex items-center h-[46px] gap-px relative top-px pl-px overflow-visible group/cell"
+            style={{
+              width: leftOffset > 0 ? `calc(100% + ${leftOffset * CELL_WIDTH}px)` : "100%",
+              marginLeft: leftOffset > 0 ? -leftOffset * CELL_WIDTH : 0,
+            }}
+          >
             <div className="relative h-[46px] group/chip min-w-0" style={{ flex: 1 }}>
-              {/* Left resize handle */}
+              {/* Left resize handle — moves start time left; right edge stays fixed */}
               <div
                 className="absolute left-0 top-0 bottom-0 w-3 z-20 flex items-center justify-center cursor-ew-resize opacity-0 group-hover/chip:opacity-100 transition-opacity"
-                title="Drag to shift start time"
+                title="Drag left to extend start time earlier"
                 onMouseDown={(e) => {
                   e.preventDefault(); e.stopPropagation();
                   const startX = e.clientX;
                   const startOffset = chipStartOffsets[chipKey] || 0;
-                  const startDur = chipDurations[chipKey] || 1;
                   let lastOffset = startOffset;
                   const onMouseMove = (me: MouseEvent) => {
+                    // negative clientX delta (dragging left) → positive offset delta
                     const delta = -Math.round((me.clientX - startX) / CELL_WIDTH);
-                    const newOffset = Math.max(0, Math.min(startOffset + delta, startDur - 1));
-                    const durChange = newOffset - startOffset;
+                    const newOffset = Math.max(0, startOffset + delta);
                     if (newOffset !== lastOffset) {
                       lastOffset = newOffset;
                       onStartOffsetChange(chipKey, newOffset);
-                      onDurationChange(chipKey, Math.max(1, startDur + durChange));
+                      // Right edge stays — only visual left extension changes
                     }
                   };
                   const onMouseUp = () => { window.removeEventListener("mousemove", onMouseMove); window.removeEventListener("mouseup", onMouseUp); };
@@ -553,14 +559,14 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow, maxColumns, rowI
         </div>
       )}
 
-      {/* Conflict badge */}
+      {/* Conflict badge — bottom-left so it never overlaps the top-right + button */}
       {isConflict && (
         <button
           onClick={(e) => {
             e.stopPropagation();
             onConflictClick(staffName, timeLabel, chips.map((c) => c.label));
           }}
-          className="absolute top-1 right-1 w-5 h-5 bg-[#ef4444] text-white text-[9px] font-black rounded-full flex items-center justify-center z-10 hover:bg-[#dc2626] transition-colors shadow-sm leading-none"
+          className="absolute bottom-1 left-1 w-5 h-5 bg-[#ef4444] text-white text-[9px] font-black rounded-full flex items-center justify-center z-20 hover:bg-[#dc2626] transition-colors shadow-sm leading-none"
           title={`${chips.length} conflicting events — click to resolve`}
           data-testid={`conflict-badge-${staffName}-${timeLabel}`}
         >
@@ -788,7 +794,16 @@ export const CalendarSubsection = ({
         const totalCount = baseChips.length + customChips.length;
         for (let chipIdx = 0; chipIdx < totalCount; chipIdx++) {
           const chipKey = `${staff}||${time}||${chipIdx}`;
-          const duration = chipDurations[chipKey] || 1;
+          // Manual drag override takes priority; otherwise derive from custom endTime
+          let duration = chipDurations[chipKey] || 1;
+          if (!chipDurations[chipKey] && chipIdx >= baseChips.length) {
+            const ce = customChips[chipIdx - baseChips.length];
+            if (ce?.endTime) {
+              const si = timeColumns.indexOf(time);
+              const ei = timeColumns.indexOf(ce.endTime);
+              if (ei > si) duration = ei - si;
+            }
+          }
           if (duration > 1) {
             for (let d = 1; d < duration; d++) {
               if (timeIdx + d < timeColumns.length) {
@@ -1018,9 +1033,25 @@ export const CalendarSubsection = ({
                     })),
                   ];
 
-                  // Single-chip cells can span multiple columns based on duration
+                  // Single-chip cells can span multiple columns.
+                  // Priority: 1) manual drag override via chipDurations
+                  //           2) custom event endTime-derived span
+                  //           3) default 1
+                  const chipKey0 = `${staff}||${time}||0`;
+                  const manualDur = chipDurations[chipKey0];
+                  const autoEndDur = (() => {
+                    if (allChips.length === 1 && matchingCustomEvents.length === 1) {
+                      const ce = matchingCustomEvents[0];
+                      if (ce.endTime) {
+                        const si = timeColumns.indexOf(time);
+                        const ei = timeColumns.indexOf(ce.endTime);
+                        if (ei > si) return ei - si;
+                      }
+                    }
+                    return 1;
+                  })();
                   const colSpan = allChips.length === 1
-                    ? Math.min(chipDurations[`${staff}||${time}||0`] || 1, timeColumns.length - ci)
+                    ? Math.min(manualDur ?? autoEndDur, timeColumns.length - ci)
                     : 1;
                   const maxCols = timeColumns.length - ci;
 

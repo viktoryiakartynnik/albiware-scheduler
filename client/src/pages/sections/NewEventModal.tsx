@@ -311,6 +311,25 @@ export const NewEventModal = ({
   // Auto-suggest split coverage when nobody is free for the selected range
   const allBusy = availableStaff.length === 0 && existingEvents.length > 0;
 
+  // Per-segment availability: check each segment's time window independently
+  const segmentStaffStatuses = useMemo<Record<string, StaffStatus>[]>(() => {
+    return splitSegments.map((seg) => {
+      const segStart = timeToMin(seg.startTime);
+      const segEnd   = seg.endTime ? timeToMin(seg.endTime) : segStart + 60;
+      const result: Record<string, StaffStatus> = {};
+      for (const name of staffMembers) {
+        const busy = existingEvents.some((e) => {
+          if (e.staffName !== name) return false;
+          const evStart = timeToMin(e.startTime);
+          const evEnd   = e.endTime ? timeToMin(e.endTime) : evStart + 60;
+          return evStart < segEnd && evEnd > segStart;
+        });
+        result[name] = busy ? "unavailable" : "available";
+      }
+      return result;
+    });
+  }, [splitSegments, existingEvents]);
+
   // Multi-staff helpers
   const addStaff = (name: string) => {
     if (!form.staffNames.includes(name)) {
@@ -757,37 +776,49 @@ export const NewEventModal = ({
                         </Select>
                       </div>
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-[10px] text-[#9ca3af] font-['Inter',sans-serif] uppercase tracking-wide">Staff member</Label>
-                      <Select value={seg.staffName} onValueChange={(v) => updateSegment(idx, "staffName", v)}>
-                        <SelectTrigger className={`h-8 text-xs border-[#dedede] font-['Inter',sans-serif] ${!seg.staffName ? "text-[#9ca3af]" : ""}`}>
-                          <SelectValue placeholder="Select staff…" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-[200px]">
-                          {availableStaff.map((s) => (
-                            <SelectItem key={s} value={s} className="text-xs">
-                              <div className="flex items-center gap-1.5">
-                                <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e]" />
-                                {s}
-                              </div>
-                            </SelectItem>
-                          ))}
-                          {unavailableStaff.length > 0 && (
-                            <>
-                              <Separator className="my-1" />
-                              {unavailableStaff.map((s) => (
-                                <SelectItem key={s} value={s} className="text-xs opacity-60">
+                    {(() => {
+                      const segStatuses = segmentStaffStatuses[idx] || {};
+                      const segAvail   = staffMembers.filter((s) => segStatuses[s] === "available");
+                      const segBusy    = staffMembers.filter((s) => segStatuses[s] === "unavailable");
+                      return (
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-[10px] text-[#9ca3af] font-['Inter',sans-serif] uppercase tracking-wide">Staff member</Label>
+                            <span className="text-[9px] text-[#15803d] font-medium font-['Inter',sans-serif]">
+                              {segAvail.length} free this segment
+                            </span>
+                          </div>
+                          <Select value={seg.staffName} onValueChange={(v) => updateSegment(idx, "staffName", v)}>
+                            <SelectTrigger className={`h-8 text-xs border-[#dedede] font-['Inter',sans-serif] ${!seg.staffName ? "text-[#9ca3af]" : ""}`}>
+                              <SelectValue placeholder="Select staff…" />
+                            </SelectTrigger>
+                            <SelectContent className="max-h-[200px]">
+                              {segAvail.map((s) => (
+                                <SelectItem key={s} value={s} className="text-xs">
                                   <div className="flex items-center gap-1.5">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-[#ef4444]" />
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e]" />
                                     {s}
                                   </div>
                                 </SelectItem>
                               ))}
-                            </>
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                              {segBusy.length > 0 && (
+                                <>
+                                  <Separator className="my-1" />
+                                  {segBusy.map((s) => (
+                                    <SelectItem key={s} value={s} className="text-xs opacity-60">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-[#ef4444]" />
+                                        {s}
+                                      </div>
+                                    </SelectItem>
+                                  ))}
+                                </>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      );
+                    })()}
                   </div>
                 ))}
                 <button

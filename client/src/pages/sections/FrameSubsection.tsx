@@ -11,7 +11,7 @@ export const FrameSubsection = (): JSX.Element => {
         <div className="flex h-10 items-center gap-2 px-3.5 py-2.5 w-full bg-basewhite rounded-md border-2 border-solid border-[#dedede] shadow-shadow-xs">
           <SearchIcon className="w-4 h-4 text-[#9aa3b0] flex-shrink-0" />
           <span className="font-medium text-[#9aa3b0] text-base leading-6 [font-family:'Inter',Helvetica] tracking-[0] whitespace-nowrap">
-            SearchIcon names, phone numbers, and addrresses
+            Search names, phone numbers, and addresses
           </span>
         </div>
       </div>

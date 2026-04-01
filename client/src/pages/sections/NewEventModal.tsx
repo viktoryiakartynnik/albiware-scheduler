@@ -1,7 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   X, Calendar, Clock, User, Briefcase, FileText,
-  CheckCircle2, XCircle, Users
+  CheckCircle2, XCircle, Users, MapPin, Star, Contact
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +35,9 @@ export interface NewEventData {
   staffName2?: string;
   jobType: string;
   notes: string;
+  location?: string;
+  clientName?: string;
+  priority?: string;
   color: { bg: string; border: string };
   isSplitCoverage?: boolean;
 }
@@ -72,52 +75,59 @@ const staffMembers = [
 ];
 
 const jobTypes = [
-  { value: "plumbing", label: "Plumbing", color: { bg: "#fcf1d9", border: "#eca203" } },
-  { value: "hvac", label: "HVAC", color: { bg: "#f2ebf8", border: "#8238bb" } },
-  { value: "electrical", label: "Electrical", color: { bg: "#e5effd", border: "#0063ec" } },
-  { value: "gas", label: "Gas Line", color: { bg: "#e5f1ed", border: "#007c54" } },
-  { value: "inspection", label: "Inspection", color: { bg: "#fcf1d9", border: "#eca203" } },
-  { value: "general", label: "General Maintenance", color: { bg: "#e5effd", border: "#0063ec" } },
+  { value: "plumbing",   label: "Plumbing",            color: { bg: "#fcf1d9", border: "#eca203" } },
+  { value: "hvac",       label: "HVAC",                color: { bg: "#f2ebf8", border: "#8238bb" } },
+  { value: "electrical", label: "Electrical",          color: { bg: "#e5effd", border: "#0063ec" } },
+  { value: "gas",        label: "Gas Line",            color: { bg: "#e5f1ed", border: "#007c54" } },
+  { value: "inspection", label: "Inspection",          color: { bg: "#fcf1d9", border: "#eca203" } },
+  { value: "general",    label: "General Maintenance", color: { bg: "#e5effd", border: "#0063ec" } },
+];
+
+const priorityOptions = [
+  { value: "low",    label: "Low",    color: "bg-[#f0fdf4] text-[#15803d] border-[#bbf7d0]" },
+  { value: "medium", label: "Medium", color: "bg-[#fffbeb] text-[#b45309] border-[#fde68a]" },
+  { value: "high",   label: "High",   color: "bg-[#fff7ed] text-[#c2410c] border-[#fed7aa]" },
+  { value: "urgent", label: "Urgent", color: "bg-[#fef2f2] text-[#dc2626] border-[#fecaca]" },
 ];
 
 const timeOptions = [
-  "08:00 AM", "08:30 AM", "09:00 AM", "09:30 AM",
-  "10:00 AM", "10:30 AM", "11:00 AM", "11:30 AM",
-  "12:00 PM", "12:30 PM", "01:00 PM", "01:30 PM",
-  "02:00 PM", "02:30 PM", "03:00 PM", "03:30 PM",
-  "04:00 PM", "04:30 PM", "05:00 PM",
+  "08:00 AM","08:30 AM","09:00 AM","09:30 AM",
+  "10:00 AM","10:30 AM","11:00 AM","11:30 AM",
+  "12:00 PM","12:30 PM","01:00 PM","01:30 PM",
+  "02:00 PM","02:30 PM","03:00 PM","03:30 PM",
+  "04:00 PM","04:30 PM","05:00 PM",
 ];
 
-const jobPrefixes = ["PRJ", "GEN", "ELEC", "SRV", "HVAC", "AS", "MG", "PN"];
-
+const jobPrefixes = ["PRJ","GEN","ELEC","SRV","HVAC","AS","MG","PN"];
 function generateRef() {
   const prefix = jobPrefixes[Math.floor(Math.random() * jobPrefixes.length)];
   const num = Math.floor(Math.random() * 9000) + 1000;
-  const year = "25";
-  const seq = Math.floor(Math.random() * 9000) + 1000;
-  return `${prefix} ${num} – ${year}-${seq}`;
+  return `${prefix} ${num} – 25-${Math.floor(Math.random() * 9000) + 1000}`;
 }
 
 type StaffStatus = "available" | "unavailable";
 
 function getStatusConfig(status: StaffStatus) {
   if (status === "available") {
-    return {
-      dot: "bg-[#22c55e]",
-      text: "text-[#15803d]",
-      badge: "bg-[#dcfce7] text-[#15803d]",
-      label: "Available",
-      icon: CheckCircle2,
-    };
+    return { dot: "bg-[#22c55e]", text: "text-[#15803d]", badge: "bg-[#dcfce7] text-[#15803d]", label: "Available" };
   }
-  return {
-    dot: "bg-[#ef4444]",
-    text: "text-[#dc2626]",
-    badge: "bg-[#fee2e2] text-[#dc2626]",
-    label: "Unavailable",
-    icon: XCircle,
-  };
+  return { dot: "bg-[#ef4444]", text: "text-[#dc2626]", badge: "bg-[#fee2e2] text-[#dc2626]", label: "Unavailable" };
 }
+
+const defaultForm = (prefilledSlot?: PrefilledSlot | null) => ({
+  title: "",
+  reference: generateRef(),
+  date: prefilledSlot?.date || "2026-05-27",
+  startTime: prefilledSlot?.timeLabel || "10:00 AM",
+  endTime: "11:00 AM",
+  staffName: prefilledSlot?.staffName || "",
+  staffName2: "",
+  jobType: "plumbing",
+  notes: "",
+  location: "",
+  clientName: "",
+  priority: "medium",
+});
 
 export const NewEventModal = ({
   open,
@@ -127,24 +137,22 @@ export const NewEventModal = ({
   prefilledSlot,
   existingEvents = [],
 }: NewEventModalProps) => {
-  const defaultJobType = jobTypes[0];
-  const [form, setForm] = useState({
-    title: "",
-    reference: generateRef(),
-    date: "2026-05-27",
-    startTime: prefilledSlot?.timeLabel || "10:00 AM",
-    endTime: "11:00 AM",
-    staffName: prefilledSlot?.staffName || "",
-    staffName2: "",
-    jobType: "plumbing",
-    notes: "",
-  });
+  const [form, setForm] = useState(defaultForm(prefilledSlot));
   const [isSplitCoverage, setIsSplitCoverage] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const selectedJobType = jobTypes.find((j) => j.value === form.jobType) || defaultJobType;
+  // Re-sync form whenever modal opens or prefilledSlot changes
+  useEffect(() => {
+    if (open) {
+      setForm(defaultForm(prefilledSlot));
+      setIsSplitCoverage(false);
+      setErrors({});
+    }
+  }, [open, prefilledSlot?.staffName, prefilledSlot?.timeLabel]);
 
-  // Compute availability per staff for the selected start time
+  const selectedJobType = jobTypes.find((j) => j.value === form.jobType) || jobTypes[0];
+
+  // Live availability: recomputes whenever startTime changes
   const staffStatuses = useMemo<Record<string, StaffStatus>>(() => {
     const result: Record<string, StaffStatus> = {};
     for (const name of staffMembers) {
@@ -156,34 +164,28 @@ export const NewEventModal = ({
     return result;
   }, [existingEvents, form.startTime]);
 
-  const availableStaff = staffMembers.filter((s) => staffStatuses[s] === "available");
+  const availableStaff   = staffMembers.filter((s) => staffStatuses[s] === "available");
   const unavailableStaff = staffMembers.filter((s) => staffStatuses[s] === "unavailable");
 
   const selectedStatus = form.staffName ? staffStatuses[form.staffName] : null;
   const selectedStatusConfig = selectedStatus ? getStatusConfig(selectedStatus) : null;
 
   const validate = () => {
-    const newErrors: Record<string, string> = {};
-    if (!form.title.trim()) newErrors.title = "Job title is required";
-    if (!form.staffName) newErrors.staffName = "Staff member is required";
-    if (isSplitCoverage && !form.staffName2) newErrors.staffName2 = "Second staff member is required";
-    if (!form.startTime) newErrors.startTime = "Start time is required";
-    if (!form.endTime) newErrors.endTime = "End time is required";
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const checkConflict = () => {
-    if (!form.staffName) return null;
-    const conflict = existingEvents.find(
-      (e) => e.staffName === form.staffName && e.startTime === form.startTime
-    );
-    return conflict ? `${form.staffName} already has an event at ${form.startTime}` : null;
+    const errs: Record<string, string> = {};
+    if (!form.title.trim()) errs.title = "Job title is required";
+    if (!form.staffName)    errs.staffName = "Staff member is required";
+    if (isSplitCoverage && !form.staffName2) errs.staffName2 = "Second staff member is required";
+    if (!form.startTime)    errs.startTime = "Start time is required";
+    if (!form.endTime)      errs.endTime = "End time is required";
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
   };
 
   const handleSave = () => {
     if (!validate()) return;
-    const conflictMsg = checkConflict();
+    const conflictMsg = existingEvents.find(
+      (e) => e.staffName === form.staffName && e.startTime === form.startTime
+    );
     const eventData: NewEventData = {
       id: `evt-${Date.now()}`,
       title: form.title,
@@ -195,21 +197,29 @@ export const NewEventModal = ({
       staffName2: isSplitCoverage ? form.staffName2 : undefined,
       jobType: form.jobType,
       notes: form.notes,
+      location: form.location,
+      clientName: form.clientName,
+      priority: form.priority,
       color: selectedJobType.color,
       isSplitCoverage,
     };
     if (conflictMsg) {
-      onConflict(eventData, conflictMsg);
+      onConflict(eventData, `${form.staffName} already has an event at ${form.startTime}`);
     } else {
       onSave(eventData);
       onClose();
     }
   };
 
+  const f = (key: keyof typeof form, val: string) => {
+    setForm((prev) => ({ ...prev, [key]: val }));
+    if (errors[key]) setErrors((prev) => ({ ...prev, [key]: "" }));
+  };
+
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent
-        className="max-w-[560px] p-0 bg-white rounded-xl overflow-hidden border border-[#e8e8e8]"
+        className="max-w-[580px] p-0 bg-white rounded-xl overflow-hidden border border-[#e8e8e8]"
         data-testid="new-event-modal"
       >
         {/* Header */}
@@ -226,20 +236,20 @@ export const NewEventModal = ({
               <X className="w-4 h-4" />
             </button>
           </div>
-
-          {prefilledSlot && (
+          {prefilledSlot && (prefilledSlot.staffName || prefilledSlot.timeLabel) && (
             <div className="mt-2 flex items-center gap-2 bg-[#e5effd] rounded-md px-3 py-2">
               <Calendar className="w-4 h-4 text-[#0065f4] flex-shrink-0" />
               <span className="text-sm text-[#0065f4] font-['Inter',sans-serif] font-medium">
-                {prefilledSlot.staffName && `${prefilledSlot.staffName} — `}
-                {prefilledSlot.timeLabel && prefilledSlot.timeLabel}
+                {prefilledSlot.staffName && `${prefilledSlot.staffName}`}
+                {prefilledSlot.staffName && prefilledSlot.timeLabel && " — "}
+                {prefilledSlot.timeLabel}
               </span>
             </div>
           )}
         </DialogHeader>
 
-        {/* Form Body */}
-        <div className="px-6 py-5 space-y-4 max-h-[560px] overflow-y-auto">
+        {/* Form */}
+        <div className="px-6 py-4 space-y-4 max-h-[560px] overflow-y-auto">
 
           {/* Job Title */}
           <div className="space-y-1.5">
@@ -249,10 +259,7 @@ export const NewEventModal = ({
             </Label>
             <Input
               value={form.title}
-              onChange={(e) => {
-                setForm({ ...form, title: e.target.value });
-                if (errors.title) setErrors({ ...errors, title: "" });
-              }}
+              onChange={(e) => f("title", e.target.value)}
               placeholder="e.g. PRJ 3057 – Building 221 – Pipe Replacement"
               className={`h-10 text-sm font-['Inter',sans-serif] ${errors.title ? "border-red-400" : "border-[#dedede]"}`}
               data-testid="new-event-title-input"
@@ -268,9 +275,39 @@ export const NewEventModal = ({
             </Label>
             <Input
               value={form.reference}
-              onChange={(e) => setForm({ ...form, reference: e.target.value })}
+              onChange={(e) => f("reference", e.target.value)}
               className="h-10 text-sm font-['Inter',sans-serif] border-[#dedede]"
               data-testid="new-event-reference-input"
+            />
+          </div>
+
+          {/* Client Name */}
+          <div className="space-y-1.5">
+            <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif] flex items-center gap-1.5">
+              <Contact className="w-3.5 h-3.5 text-[#6b7280]" />
+              Client Name
+            </Label>
+            <Input
+              value={form.clientName}
+              onChange={(e) => f("clientName", e.target.value)}
+              placeholder="e.g. Saina Properties Ltd."
+              className="h-10 text-sm font-['Inter',sans-serif] border-[#dedede]"
+              data-testid="new-event-client-input"
+            />
+          </div>
+
+          {/* Location */}
+          <div className="space-y-1.5">
+            <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif] flex items-center gap-1.5">
+              <MapPin className="w-3.5 h-3.5 text-[#6b7280]" />
+              Location / Address
+            </Label>
+            <Input
+              value={form.location}
+              onChange={(e) => f("location", e.target.value)}
+              placeholder="e.g. 221 Building, Lakeshore Blvd"
+              className="h-10 text-sm font-['Inter',sans-serif] border-[#dedede]"
+              data-testid="new-event-location-input"
             />
           </div>
 
@@ -283,7 +320,7 @@ export const NewEventModal = ({
             <Input
               type="date"
               value={form.date}
-              onChange={(e) => setForm({ ...form, date: e.target.value })}
+              onChange={(e) => f("date", e.target.value)}
               className="h-10 text-sm font-['Inter',sans-serif] border-[#dedede]"
               data-testid="new-event-date-input"
             />
@@ -296,13 +333,7 @@ export const NewEventModal = ({
                 <Clock className="w-3.5 h-3.5 text-[#6b7280]" />
                 Start Time <span className="text-red-500">*</span>
               </Label>
-              <Select
-                value={form.startTime}
-                onValueChange={(v) => {
-                  setForm({ ...form, startTime: v });
-                  if (errors.startTime) setErrors({ ...errors, startTime: "" });
-                }}
-              >
+              <Select value={form.startTime} onValueChange={(v) => f("startTime", v)}>
                 <SelectTrigger
                   className={`h-10 text-sm font-['Inter',sans-serif] ${errors.startTime ? "border-red-400" : "border-[#dedede]"}`}
                   data-testid="new-event-start-time"
@@ -321,13 +352,7 @@ export const NewEventModal = ({
                 <Clock className="w-3.5 h-3.5 text-[#6b7280]" />
                 End Time <span className="text-red-500">*</span>
               </Label>
-              <Select
-                value={form.endTime}
-                onValueChange={(v) => {
-                  setForm({ ...form, endTime: v });
-                  if (errors.endTime) setErrors({ ...errors, endTime: "" });
-                }}
-              >
+              <Select value={form.endTime} onValueChange={(v) => f("endTime", v)}>
                 <SelectTrigger
                   className={`h-10 text-sm font-['Inter',sans-serif] ${errors.endTime ? "border-red-400" : "border-[#dedede]"}`}
                   data-testid="new-event-end-time"
@@ -348,13 +373,12 @@ export const NewEventModal = ({
             <div className="flex items-center justify-between">
               <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif] flex items-center gap-1.5">
                 <User className="w-3.5 h-3.5 text-[#6b7280]" />
-                Assign Staff Member <span className="text-red-500">*</span>
+                Assign Staff <span className="text-red-500">*</span>
               </Label>
-              {/* Split Coverage toggle */}
               <button
                 onClick={() => {
                   setIsSplitCoverage(!isSplitCoverage);
-                  if (isSplitCoverage) setForm({ ...form, staffName2: "" });
+                  if (isSplitCoverage) setForm((p) => ({ ...p, staffName2: "" }));
                 }}
                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-semibold transition-all ${
                   isSplitCoverage
@@ -368,8 +392,8 @@ export const NewEventModal = ({
               </button>
             </div>
 
-            {/* Info bar showing counts */}
-            <div className="flex items-center gap-3 text-xs font-['Inter',sans-serif]">
+            {/* Live availability count — updates when startTime changes */}
+            <div className="flex items-center gap-3 text-xs font-['Inter',sans-serif] py-0.5">
               <span className="flex items-center gap-1.5 text-[#15803d]">
                 <span className="w-2 h-2 rounded-full bg-[#22c55e] inline-block" />
                 {availableStaff.length} available at {form.startTime}
@@ -383,13 +407,7 @@ export const NewEventModal = ({
             </div>
 
             {/* Primary staff select */}
-            <Select
-              value={form.staffName}
-              onValueChange={(v) => {
-                setForm({ ...form, staffName: v });
-                if (errors.staffName) setErrors({ ...errors, staffName: "" });
-              }}
-            >
+            <Select value={form.staffName} onValueChange={(v) => f("staffName", v)}>
               <SelectTrigger
                 className={`h-11 text-sm font-['Inter',sans-serif] ${errors.staffName ? "border-red-400" : "border-[#dedede]"}`}
                 data-testid="new-event-staff-select"
@@ -403,7 +421,7 @@ export const NewEventModal = ({
                     </span>
                   </div>
                 ) : (
-                  <SelectValue placeholder="Select staff member..." />
+                  <SelectValue placeholder="Select staff member…" />
                 )}
               </SelectTrigger>
               <SelectContent className="max-h-[280px]">
@@ -411,14 +429,14 @@ export const NewEventModal = ({
                   <SelectGroup>
                     <SelectLabel className="text-xs font-bold text-[#15803d] flex items-center gap-1.5 py-1.5">
                       <span className="w-2 h-2 rounded-full bg-[#22c55e] inline-block" />
-                      Available ({availableStaff.length})
+                      Available at {form.startTime} ({availableStaff.length})
                     </SelectLabel>
                     {availableStaff.map((s) => (
                       <SelectItem key={s} value={s} className="cursor-pointer">
                         <div className="flex items-center gap-2 w-full">
                           <span className="w-2 h-2 rounded-full bg-[#22c55e] flex-shrink-0" />
                           <span className="font-medium text-[#0e1828]">{s}</span>
-                          <span className="ml-auto text-xs text-[#15803d] font-semibold pl-4">Available</span>
+                          <CheckCircle2 className="w-3 h-3 text-[#22c55e] ml-auto" />
                         </div>
                       </SelectItem>
                     ))}
@@ -430,14 +448,14 @@ export const NewEventModal = ({
                     <SelectGroup>
                       <SelectLabel className="text-xs font-bold text-[#dc2626] flex items-center gap-1.5 py-1.5">
                         <span className="w-2 h-2 rounded-full bg-[#ef4444] inline-block" />
-                        Unavailable ({unavailableStaff.length})
+                        Busy at {form.startTime} ({unavailableStaff.length})
                       </SelectLabel>
                       {unavailableStaff.map((s) => (
-                        <SelectItem key={s} value={s} className="cursor-pointer opacity-70">
+                        <SelectItem key={s} value={s} className="cursor-pointer opacity-60">
                           <div className="flex items-center gap-2 w-full">
                             <span className="w-2 h-2 rounded-full bg-[#ef4444] flex-shrink-0" />
                             <span className="font-medium text-[#6b7280] line-through">{s}</span>
-                            <span className="ml-auto text-xs text-[#dc2626] font-semibold pl-4">Busy</span>
+                            <XCircle className="w-3 h-3 text-[#ef4444] ml-auto" />
                           </div>
                         </SelectItem>
                       ))}
@@ -448,76 +466,46 @@ export const NewEventModal = ({
             </Select>
             {errors.staffName && <p className="text-xs text-red-500">{errors.staffName}</p>}
 
-            {/* Split Coverage — second staff */}
+            {/* Split Coverage second staff */}
             {isSplitCoverage && (
               <div className="mt-2 space-y-1.5">
                 <div className="flex items-center gap-2 p-2 bg-[#fff7ed] rounded-md border border-[#fed7aa]">
                   <Users className="w-3.5 h-3.5 text-[#f97316] flex-shrink-0" />
                   <span className="text-xs font-semibold text-[#c2410c] font-['Inter',sans-serif]">
-                    Split Coverage: second staff member
+                    Second staff member (split coverage)
                   </span>
                 </div>
-                <Select
-                  value={form.staffName2}
-                  onValueChange={(v) => {
-                    setForm({ ...form, staffName2: v });
-                    if (errors.staffName2) setErrors({ ...errors, staffName2: "" });
-                  }}
-                >
+                <Select value={form.staffName2} onValueChange={(v) => f("staffName2", v)}>
                   <SelectTrigger
                     className={`h-11 text-sm font-['Inter',sans-serif] border-[#fed7aa] ${errors.staffName2 ? "border-red-400" : ""}`}
                     data-testid="new-event-staff2-select"
                   >
                     {form.staffName2 ? (
                       <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${staffStatuses[form.staffName2] === 'available' ? 'bg-[#22c55e]' : 'bg-[#ef4444]'}`} />
+                        <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${staffStatuses[form.staffName2] === "available" ? "bg-[#22c55e]" : "bg-[#ef4444]"}`} />
                         <span className="font-medium text-[#0e1828] truncate">{form.staffName2}</span>
-                        <span className={`ml-auto text-xs px-1.5 py-0.5 rounded font-semibold flex-shrink-0 ${staffStatuses[form.staffName2] === 'available' ? 'bg-[#dcfce7] text-[#15803d]' : 'bg-[#fee2e2] text-[#dc2626]'}`}>
-                          {staffStatuses[form.staffName2] === 'available' ? 'Available' : 'Busy'}
-                        </span>
                       </div>
                     ) : (
-                      <SelectValue placeholder="Select second staff member..." />
+                      <SelectValue placeholder="Select second staff…" />
                     )}
                   </SelectTrigger>
                   <SelectContent className="max-h-[240px]">
-                    {availableStaff.filter((s) => s !== form.staffName).length > 0 && (
-                      <SelectGroup>
-                        <SelectLabel className="text-xs font-bold text-[#15803d] flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-[#22c55e] inline-block" />
-                          Available
-                        </SelectLabel>
-                        {availableStaff.filter((s) => s !== form.staffName).map((s) => (
-                          <SelectItem key={s} value={s}>
-                            <div className="flex items-center gap-2">
-                              <span className="w-2 h-2 rounded-full bg-[#22c55e] flex-shrink-0" />
-                              <span>{s}</span>
-                              <span className="ml-auto text-xs text-[#15803d] pl-4">Available</span>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    )}
-                    {unavailableStaff.filter((s) => s !== form.staffName).length > 0 && (
-                      <>
-                        <Separator className="my-1" />
-                        <SelectGroup>
-                          <SelectLabel className="text-xs font-bold text-[#dc2626] flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-[#ef4444] inline-block" />
-                            Unavailable
-                          </SelectLabel>
-                          {unavailableStaff.filter((s) => s !== form.staffName).map((s) => (
-                            <SelectItem key={s} value={s} className="opacity-70">
-                              <div className="flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full bg-[#ef4444] flex-shrink-0" />
-                                <span className="text-[#6b7280] line-through">{s}</span>
-                                <span className="ml-auto text-xs text-[#dc2626] pl-4">Busy</span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </>
-                    )}
+                    {availableStaff.filter((s) => s !== form.staffName).map((s) => (
+                      <SelectItem key={s} value={s}>
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-[#22c55e] flex-shrink-0" />
+                          <span>{s}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                    {unavailableStaff.filter((s) => s !== form.staffName).map((s) => (
+                      <SelectItem key={s} value={s} className="opacity-60">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-[#ef4444] flex-shrink-0" />
+                          <span className="line-through text-[#6b7280]">{s}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 {errors.staffName2 && <p className="text-xs text-red-500">{errors.staffName2}</p>}
@@ -534,7 +522,7 @@ export const NewEventModal = ({
               {jobTypes.map((jt) => (
                 <button
                   key={jt.value}
-                  onClick={() => setForm({ ...form, jobType: jt.value })}
+                  onClick={() => f("jobType", jt.value)}
                   className={`px-3 py-1.5 rounded-md text-xs font-semibold font-['Inter',sans-serif] border-2 transition-all ${
                     form.jobType === jt.value
                       ? "border-[#0065f4] text-[#0065f4] bg-[#e5effd]"
@@ -548,33 +536,52 @@ export const NewEventModal = ({
             </div>
           </div>
 
+          {/* Priority */}
+          <div className="space-y-1.5">
+            <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif] flex items-center gap-1.5">
+              <Star className="w-3.5 h-3.5 text-[#6b7280]" />
+              Priority
+            </Label>
+            <div className="flex gap-2">
+              {priorityOptions.map((p) => (
+                <button
+                  key={p.value}
+                  onClick={() => f("priority", p.value)}
+                  className={`flex-1 py-1.5 rounded-md text-xs font-semibold font-['Inter',sans-serif] border transition-all ${
+                    form.priority === p.value
+                      ? `${p.color} border-current ring-1 ring-current ring-offset-1`
+                      : "border-[#e8e8e8] text-[#9ca3af] bg-white hover:border-[#d1d5db]"
+                  }`}
+                  data-testid={`priority-${p.value}`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Preview */}
-          <div className="flex items-center gap-2 py-1">
-            <span className="text-xs text-[#6b7280] font-['Inter',sans-serif]">Preview:</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-[#9ca3af] font-['Inter',sans-serif]">Preview:</span>
             <div
               className="inline-flex items-center px-2 py-1 rounded border-l-4 text-xs font-bold font-['Inter',sans-serif] text-[#252627]"
-              style={{
-                backgroundColor: selectedJobType.color.bg,
-                borderLeftColor: selectedJobType.color.border,
-              }}
+              style={{ backgroundColor: selectedJobType.color.bg, borderLeftColor: selectedJobType.color.border }}
               data-testid="event-preview-badge"
             >
               {form.title || "Job Title"}
-              {isSplitCoverage && (
-                <span className="ml-1.5 text-[#f97316]">· Split ×2</span>
-              )}
+              {isSplitCoverage && <span className="ml-1.5 text-[#f97316]">· Split ×2</span>}
             </div>
           </div>
 
           {/* Notes */}
           <div className="space-y-1.5">
             <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif]">
-              Notes
+              Notes / Instructions
             </Label>
             <Textarea
               value={form.notes}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              placeholder="Add any additional notes or instructions..."
+              onChange={(e) => f("notes", e.target.value)}
+              placeholder="Add any additional notes, special instructions, or equipment requirements…"
               className="text-sm font-['Inter',sans-serif] border-[#dedede] resize-none h-20"
               data-testid="new-event-notes"
             />

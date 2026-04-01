@@ -4,122 +4,142 @@ import {
   MapPinIcon, SettingsIcon, CheckCircle2, X, Search
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { CalendarSubsection, CustomEventData } from "./sections/CalendarSubsection";
+import { CalendarSubsection, CustomEventData, CellChip } from "./sections/CalendarSubsection";
 import { FrameSubsection } from "./sections/FrameSubsection";
 import { FrameWrapperSubsection } from "./sections/FrameWrapperSubsection";
 import { ViewControlsSubsection } from "./sections/ViewControlsSubsection";
 import { AvailabilitySearchSheet, AvailabilityFilters } from "./sections/AvailabilitySearchSheet";
 import { NewEventModal, NewEventData, PrefilledSlot } from "./sections/NewEventModal";
 import { ConflictResolutionDialog } from "./sections/ConflictResolutionDialog";
+import { JobDetailModal, JobDetailPayload } from "./sections/JobDetailModal";
 
 const navItems = [
-  { icon: CalendarIcon, label: "Scheduler", active: true },
-  { icon: UsersIcon, label: "Customers" },
+  { icon: CalendarIcon,  label: "Scheduler", active: true },
+  { icon: UsersIcon,     label: "Customers" },
   { icon: BriefcaseIcon, label: "Jobs" },
-  { icon: MapPinIcon, label: "Map" },
-  { icon: SettingsIcon, label: "Settings" },
+  { icon: MapPinIcon,    label: "Map" },
+  { icon: SettingsIcon,  label: "Settings" },
 ];
 
-// Events that are pre-occupied (drives availability + conflict detection)
+// Base occupied slots — drives staff-availability checks
 const existingEventSlots = [
-  { staffName: "Alan Thomas", startTime: "10:00 AM" },
-  { staffName: "Alan Thomas", startTime: "11:00 AM" },
-  { staffName: "Alan Thomas", startTime: "12:00 PM" },
-  { staffName: "Alan Thomas", startTime: "02:00 PM" },
-  { staffName: "Alan Thomas", startTime: "04:00 PM" },
-  { staffName: "Michael Schaj", startTime: "10:00 AM" },
-  { staffName: "Michael Schaj", startTime: "11:00 AM" },
-  { staffName: "Michael Schaj", startTime: "12:00 PM" },
-  { staffName: "Michael Schaj", startTime: "01:00 PM" },
-  { staffName: "Michael Schaj", startTime: "03:00 PM" },
-  { staffName: "Anna Sorokin", startTime: "10:00 AM" },
-  { staffName: "Anna Sorokin", startTime: "11:00 AM" },
-  { staffName: "Anna Sorokin", startTime: "12:00 PM" },
-  { staffName: "Anna Sorokin", startTime: "02:00 PM" },
-  { staffName: "Anna Sorokin", startTime: "04:00 PM" },
-  { staffName: "Connor Grace", startTime: "01:00 PM" },
-  { staffName: "Connor Grace", startTime: "03:00 PM" },
-  { staffName: "Connor Grace", startTime: "05:00 PM" },
-  { staffName: "Carmen Flores", startTime: "10:00 AM" },
-  { staffName: "Carmen Flores", startTime: "11:00 AM" },
-  { staffName: "Carmen Flores", startTime: "12:00 PM" },
-  { staffName: "Carmen Flores", startTime: "03:00 PM" },
-  { staffName: "Shamoil Soni", startTime: "01:00 PM" },
-  { staffName: "Shamoil Soni", startTime: "03:00 PM" },
-  { staffName: "Shamoil Soni", startTime: "05:00 PM" },
-  { staffName: "Chiara Bondesan", startTime: "10:00 AM" },
-  { staffName: "Chiara Bondesan", startTime: "11:00 AM" },
-  { staffName: "Chiara Bondesan", startTime: "12:00 PM" },
-  { staffName: "Chiara Bondesan", startTime: "01:00 PM" },
-  { staffName: "Chiara Bondesan", startTime: "03:00 PM" },
-  { staffName: "Christy Blaker", startTime: "10:00 AM" },
-  { staffName: "Christy Blaker", startTime: "12:00 PM" },
-  { staffName: "Christy Blaker", startTime: "01:00 PM" },
-  { staffName: "Christy Blaker", startTime: "04:00 PM" },
-  { staffName: "Adam Smith", startTime: "10:00 AM" },
-  { staffName: "Adam Smith", startTime: "11:00 AM" },
-  { staffName: "Adam Smith", startTime: "03:00 PM" },
-  { staffName: "Adam Smith", startTime: "05:00 PM" },
-  { staffName: "Daniyal Shamoon", startTime: "10:00 AM" },
-  { staffName: "Daniyal Shamoon", startTime: "12:00 PM" },
-  { staffName: "Daniyal Shamoon", startTime: "02:00 PM" },
-  { staffName: "Daniyal Shamoon", startTime: "04:00 PM" },
-  { staffName: "Michele Rave", startTime: "12:00 PM" },
-  { staffName: "Michele Rave", startTime: "02:00 PM" },
-  { staffName: "Michele Rave", startTime: "04:00 PM" },
-  { staffName: "Chandler Steffy", startTime: "10:00 AM" },
-  { staffName: "Chandler Steffy", startTime: "11:00 AM" },
-  { staffName: "Chandler Steffy", startTime: "12:00 PM" },
-  { staffName: "Chandler Steffy", startTime: "03:00 PM" },
-  { staffName: "Bradley Lynch", startTime: "10:00 AM" },
-  { staffName: "Bradley Lynch", startTime: "01:00 PM" },
-  { staffName: "Bradley Lynch", startTime: "02:00 PM" },
-  { staffName: "Bradley Lynch", startTime: "04:00 PM" },
-  { staffName: "Moasfar Javed", startTime: "10:00 AM" },
-  { staffName: "Moasfar Javed", startTime: "11:00 AM" },
-  { staffName: "Moasfar Javed", startTime: "12:00 PM" },
-  { staffName: "Moasfar Javed", startTime: "01:00 PM" },
-  { staffName: "Moasfar Javed", startTime: "03:00 PM" },
+  { staffName: "Alan Thomas",      startTime: "10:00 AM" },
+  { staffName: "Alan Thomas",      startTime: "11:00 AM" },
+  { staffName: "Alan Thomas",      startTime: "12:00 PM" },
+  { staffName: "Alan Thomas",      startTime: "02:00 PM" },
+  { staffName: "Alan Thomas",      startTime: "04:00 PM" },
+  { staffName: "Michael Schaj",    startTime: "10:00 AM" },
+  { staffName: "Michael Schaj",    startTime: "11:00 AM" },
+  { staffName: "Michael Schaj",    startTime: "12:00 PM" },
+  { staffName: "Michael Schaj",    startTime: "01:00 PM" },
+  { staffName: "Michael Schaj",    startTime: "03:00 PM" },
+  { staffName: "Anna Sorokin",     startTime: "10:00 AM" },
+  { staffName: "Anna Sorokin",     startTime: "11:00 AM" },
+  { staffName: "Anna Sorokin",     startTime: "12:00 PM" },
+  { staffName: "Anna Sorokin",     startTime: "02:00 PM" },
+  { staffName: "Anna Sorokin",     startTime: "04:00 PM" },
+  { staffName: "Connor Grace",     startTime: "01:00 PM" },
+  { staffName: "Connor Grace",     startTime: "03:00 PM" },
+  { staffName: "Connor Grace",     startTime: "05:00 PM" },
+  { staffName: "Carmen Flores",    startTime: "10:00 AM" },
+  { staffName: "Carmen Flores",    startTime: "11:00 AM" },
+  { staffName: "Carmen Flores",    startTime: "12:00 PM" },
+  { staffName: "Carmen Flores",    startTime: "03:00 PM" },
+  { staffName: "Shamoil Soni",     startTime: "01:00 PM" },
+  { staffName: "Shamoil Soni",     startTime: "03:00 PM" },
+  { staffName: "Shamoil Soni",     startTime: "05:00 PM" },
+  { staffName: "Chiara Bondesan",  startTime: "10:00 AM" },
+  { staffName: "Chiara Bondesan",  startTime: "11:00 AM" },
+  { staffName: "Chiara Bondesan",  startTime: "12:00 PM" },
+  { staffName: "Chiara Bondesan",  startTime: "01:00 PM" },
+  { staffName: "Chiara Bondesan",  startTime: "03:00 PM" },
+  { staffName: "Christy Blaker",   startTime: "10:00 AM" },
+  { staffName: "Christy Blaker",   startTime: "12:00 PM" },
+  { staffName: "Christy Blaker",   startTime: "01:00 PM" },
+  { staffName: "Christy Blaker",   startTime: "04:00 PM" },
+  { staffName: "Adam Smith",       startTime: "10:00 AM" },
+  { staffName: "Adam Smith",       startTime: "11:00 AM" },
+  { staffName: "Adam Smith",       startTime: "03:00 PM" },
+  { staffName: "Adam Smith",       startTime: "05:00 PM" },
+  { staffName: "Daniyal Shamoon",  startTime: "10:00 AM" },
+  { staffName: "Daniyal Shamoon",  startTime: "12:00 PM" },
+  { staffName: "Daniyal Shamoon",  startTime: "02:00 PM" },
+  { staffName: "Daniyal Shamoon",  startTime: "04:00 PM" },
+  { staffName: "Michele Rave",     startTime: "12:00 PM" },
+  { staffName: "Michele Rave",     startTime: "02:00 PM" },
+  { staffName: "Michele Rave",     startTime: "04:00 PM" },
+  { staffName: "Chandler Steffy",  startTime: "10:00 AM" },
+  { staffName: "Chandler Steffy",  startTime: "11:00 AM" },
+  { staffName: "Chandler Steffy",  startTime: "12:00 PM" },
+  { staffName: "Chandler Steffy",  startTime: "03:00 PM" },
+  { staffName: "Bradley Lynch",    startTime: "10:00 AM" },
+  { staffName: "Bradley Lynch",    startTime: "01:00 PM" },
+  { staffName: "Bradley Lynch",    startTime: "02:00 PM" },
+  { staffName: "Bradley Lynch",    startTime: "04:00 PM" },
+  { staffName: "Moasfar Javed",    startTime: "10:00 AM" },
+  { staffName: "Moasfar Javed",    startTime: "11:00 AM" },
+  { staffName: "Moasfar Javed",    startTime: "12:00 PM" },
+  { staffName: "Moasfar Javed",    startTime: "01:00 PM" },
+  { staffName: "Moasfar Javed",    startTime: "03:00 PM" },
 ];
 
-interface SuccessToast {
-  message: string;
-  visible: boolean;
-}
+interface SuccessToast { message: string; visible: boolean }
 
 export const Default = (): JSX.Element => {
+  // Modal visibility
   const [showAvailabilitySearch, setShowAvailabilitySearch] = useState(false);
-  const [showNewEventModal, setShowNewEventModal] = useState(false);
-  const [showConflictDialog, setShowConflictDialog] = useState(false);
+  const [showNewEventModal,      setShowNewEventModal]      = useState(false);
+  const [showConflictDialog,     setShowConflictDialog]     = useState(false);
+  const [showJobDetailModal,     setShowJobDetailModal]     = useState(false);
 
-  const [availabilityMode, setAvailabilityMode] = useState(false);
+  // State for availability mode
+  const [availabilityMode,    setAvailabilityMode]    = useState(false);
   const [availabilityFilters, setAvailabilityFilters] = useState<AvailabilityFilters | null>(null);
+  const [selectedSlot,        setSelectedSlot]        = useState<{ staffName: string; timeLabel: string } | null>(null);
 
-  const [selectedSlot, setSelectedSlot] = useState<{ staffName: string; timeLabel: string } | null>(null);
+  // New event
   const [prefilledSlot, setPrefilledSlot] = useState<PrefilledSlot | null>(null);
 
-  const [conflictEvent, setConflictEvent] = useState<NewEventData | null>(null);
-  const [conflictMessage, setConflictMessage] = useState("");
+  // Conflict
+  const [conflictEvent,     setConflictEvent]     = useState<NewEventData | null>(null);
+  const [conflictMessage,   setConflictMessage]   = useState("");
+  const [conflictingEvents, setConflictingEvents] = useState<string[]>([]);
+  const [isConflictViewMode,setIsConflictViewMode]= useState(false);
 
+  // Job detail
+  const [jobDetailPayload, setJobDetailPayload] = useState<JobDetailPayload | null>(null);
+
+  // Custom events added this session
   const [customEvents, setCustomEvents] = useState<CustomEventData[]>([]);
+
+  // Toast
   const [successToast, setSuccessToast] = useState<SuccessToast>({ message: "", visible: false });
 
   useEffect(() => {
     if (successToast.visible) {
-      const timer = setTimeout(() => setSuccessToast({ message: "", visible: false }), 4500);
-      return () => clearTimeout(timer);
+      const t = setTimeout(() => setSuccessToast({ message: "", visible: false }), 4500);
+      return () => clearTimeout(t);
     }
   }, [successToast.visible]);
 
-  // ─── Handlers ────────────────────────────────────────────────────────
+  // ─── Helpers ─────────────────────────────────────────────────────────
 
-  const showSuccess = (message: string) => setSuccessToast({ message, visible: true });
+  const showSuccess = (msg: string) => setSuccessToast({ message: msg, visible: true });
+
+  const allOccupiedSlots = [
+    ...existingEventSlots,
+    ...customEvents.map((e) => ({ staffName: e.staffName, startTime: e.startTime })),
+  ];
+
+  // ─── Availability Search ──────────────────────────────────────────────
 
   const handleAvailabilitySearch = (filters: AvailabilityFilters) => {
     setAvailabilityFilters(filters);
     setAvailabilityMode(true);
     setSelectedSlot(null);
-    showSuccess(`Availability shown ${filters.startTime}–${filters.endTime} · Click any blue cell or double-click to schedule`);
+    showSuccess(
+      `Showing availability ${filters.startTime}–${filters.endTime} · Staff sorted by most free slots · Click blue cell or double-click to schedule`
+    );
   };
 
   const handleCancelAvailability = () => {
@@ -128,20 +148,28 @@ export const Default = (): JSX.Element => {
     setSelectedSlot(null);
   };
 
-  // Single click: only fires in availability mode
+  // ─── Slot interactions ────────────────────────────────────────────────
+
+  // Single-click on available (blue) cell
   const handleSlotClick = (staffName: string, timeLabel: string) => {
     setSelectedSlot({ staffName, timeLabel });
     setPrefilledSlot({ staffName, timeLabel });
     setShowNewEventModal(true);
   };
 
-  // Double click: fires on ANY cell, always opens modal
+  // Double-click on ANY cell
   const handleDoubleClickSlot = (staffName: string, timeLabel: string) => {
     setPrefilledSlot({ staffName, timeLabel });
     setShowNewEventModal(true);
   };
 
-  // Conflict badge click from grid
+  // Click on a chip (existing job)
+  const handleChipClick = (staffName: string, timeLabel: string, chip: CellChip) => {
+    setJobDetailPayload({ chip, staffName, timeLabel, isConflict: false });
+    setShowJobDetailModal(true);
+  };
+
+  // Click on conflict badge in a cell (view mode)
   const handleConflictCellClick = (staffName: string, timeLabel: string, events: string[]) => {
     const syntheticEvent: NewEventData = {
       id: "conflict-view",
@@ -155,11 +183,14 @@ export const Default = (): JSX.Element => {
       notes: "",
       color: { bg: "#fef2f2", border: "#ef4444" },
     };
-    const summary = events.slice(0, 2).join(" · ") + (events.length > 2 ? ` +${events.length - 2} more` : "");
     setConflictEvent(syntheticEvent);
-    setConflictMessage(`${staffName} has ${events.length} events at ${timeLabel}: ${summary}`);
+    setConflictingEvents(events);
+    setConflictMessage(`${staffName} has ${events.length} events at ${timeLabel}`);
+    setIsConflictViewMode(true);
     setShowConflictDialog(true);
   };
+
+  // ─── New Event ────────────────────────────────────────────────────────
 
   const handleNewEventClick = () => {
     setPrefilledSlot(null);
@@ -177,7 +208,6 @@ export const Default = (): JSX.Element => {
     };
     setCustomEvents((prev) => [...prev, newChip]);
 
-    // If split coverage, add a chip for the second person too
     if (event.isSplitCoverage && event.staffName2) {
       setCustomEvents((prev) => [
         ...prev,
@@ -200,9 +230,13 @@ export const Default = (): JSX.Element => {
     showSuccess(`"${event.title || event.reference}" scheduled for ${who} at ${event.startTime}`);
   };
 
+  // ─── Conflict flow ────────────────────────────────────────────────────
+
   const handleConflict = (event: NewEventData, message: string) => {
     setConflictEvent(event);
     setConflictMessage(message);
+    setConflictingEvents([]);
+    setIsConflictViewMode(false);
     setShowNewEventModal(false);
     setShowConflictDialog(true);
   };
@@ -226,10 +260,13 @@ export const Default = (): JSX.Element => {
     setShowNewEventModal(true);
   };
 
-  const allOccupiedSlots = [
-    ...existingEventSlots,
-    ...customEvents.map((e) => ({ staffName: e.staffName, startTime: e.startTime })),
-  ];
+  // ─── Job Detail → "Add Event" ─────────────────────────────────────────
+  const handleJobDetailScheduleAnother = () => {
+    if (jobDetailPayload) {
+      setPrefilledSlot({ staffName: jobDetailPayload.staffName, timeLabel: jobDetailPayload.timeLabel });
+    }
+    setShowNewEventModal(true);
+  };
 
   return (
     <div className="w-[1440px] min-h-screen flex gap-0 bg-[#f8f9fa]">
@@ -241,11 +278,11 @@ export const Default = (): JSX.Element => {
           </div>
         </div>
         <nav className="flex flex-col items-center w-full gap-1 px-2">
-          {navItems.map((item, index) => {
+          {navItems.map((item) => {
             const Icon = item.icon;
             return (
               <button
-                key={index}
+                key={item.label}
                 className={`flex flex-col items-center justify-center w-full h-12 rounded-lg gap-0.5 transition-colors ${
                   item.active
                     ? "bg-[#e5effd] text-[#0065f4]"
@@ -280,16 +317,15 @@ export const Default = (): JSX.Element => {
             </h1>
           </div>
 
-          {/* Action buttons */}
           <div className="flex items-center gap-2">
             {availabilityMode && (
-              <div className="flex items-center gap-2 bg-[#e5effd] border border-[#0065f4] rounded-md px-3 h-10">
-                <span className="text-xs font-semibold text-[#0065f4] font-['Inter',sans-serif]">
-                  Click blue · Double-click any cell
+              <div className="flex items-center gap-2 bg-[#e5effd] border border-[#93c5fd] rounded-md px-3 h-10">
+                <span className="text-xs font-semibold text-[#1d4ed8] font-['Inter',sans-serif]">
+                  {availabilityFilters?.startTime}–{availabilityFilters?.endTime}
                 </span>
                 <button
                   onClick={handleCancelAvailability}
-                  className="text-[#0065f4] hover:text-[#0052c2]"
+                  className="text-[#1d4ed8] hover:text-[#1e40af]"
                   data-testid="cancel-availability-mode"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -327,12 +363,11 @@ export const Default = (): JSX.Element => {
           <ViewControlsSubsection />
         </div>
 
-        {/* ── Calendar grid ── */}
+        {/* ── Calendar ── */}
         <div className="px-6 pb-4 flex-shrink-0">
-          {/* Hint row */}
           <div className="flex items-center justify-between mb-1.5">
             <p className="text-xs text-[#9ca3af] font-['Inter',sans-serif]">
-              Double-click any cell to schedule · Scroll right for more time slots
+              Hover a job to preview · Click to view details · Double-click any cell to add event
             </p>
             {customEvents.length > 0 && (
               <span className="text-xs font-semibold text-[#0065f4] font-['Inter',sans-serif]">
@@ -343,10 +378,12 @@ export const Default = (): JSX.Element => {
 
           <CalendarSubsection
             availabilityMode={availabilityMode}
+            availabilityFilters={availabilityFilters}
             selectedSlot={selectedSlot}
             onSlotClick={handleSlotClick}
             onDoubleClickSlot={handleDoubleClickSlot}
             onConflictClick={handleConflictCellClick}
+            onChipClick={handleChipClick}
             customEvents={customEvents}
           />
         </div>
@@ -360,7 +397,7 @@ export const Default = (): JSX.Element => {
         </div>
       </div>
 
-      {/* ── Modals & Panels ── */}
+      {/* ── Modals ── */}
 
       <AvailabilitySearchSheet
         open={showAvailabilitySearch}
@@ -389,17 +426,34 @@ export const Default = (): JSX.Element => {
         onClose={() => setShowConflictDialog(false)}
         event={conflictEvent}
         conflictMessage={conflictMessage}
+        conflictingEvents={conflictingEvents}
+        isViewMode={isConflictViewMode}
         onScheduleAnyway={handleScheduleAnyway}
         onReassignStaff={handleReassignStaff}
         onChangeTime={handleChangeTime}
       />
 
-      {/* Success Toast */}
+      <JobDetailModal
+        open={showJobDetailModal}
+        onClose={() => setShowJobDetailModal(false)}
+        payload={jobDetailPayload}
+        onScheduleAnother={handleJobDetailScheduleAnother}
+        onEditEvent={() => {
+          if (jobDetailPayload) {
+            setPrefilledSlot({
+              staffName: jobDetailPayload.staffName,
+              timeLabel: jobDetailPayload.timeLabel,
+            });
+          }
+          setShowNewEventModal(true);
+        }}
+      />
+
+      {/* Success toast */}
       {successToast.visible && (
         <div
           className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-white border border-[#d1fae5] rounded-xl shadow-xl px-4 py-3 max-w-[440px]"
           data-testid="success-toast"
-          style={{ animation: "slideInFromBottom 0.3s ease-out" }}
         >
           <div className="w-8 h-8 rounded-full bg-[#d1fae5] flex items-center justify-center flex-shrink-0">
             <CheckCircle2 className="w-4 h-4 text-[#059669]" />

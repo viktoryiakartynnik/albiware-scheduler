@@ -1,4 +1,4 @@
-import React, { createContext, useContext } from "react";
+import React, { createContext, useContext, useMemo, useState } from "react";
 
 export interface CustomEventData {
   id: string;
@@ -8,7 +8,7 @@ export interface CustomEventData {
   color: { bg: string; border: string };
 }
 
-interface CellChip {
+export interface CellChip {
   bg: string;
   border: string;
   label: string;
@@ -16,32 +16,38 @@ interface CellChip {
 
 interface CalendarContextType {
   availabilityMode: boolean;
+  availableTimeColumns: Set<string>;
   selectedSlot: { staffName: string; timeLabel: string } | null;
   onSlotClick: (staffName: string, timeLabel: string) => void;
   onDoubleClickSlot: (staffName: string, timeLabel: string) => void;
   onConflictClick: (staffName: string, timeLabel: string, events: string[]) => void;
+  onChipClick: (staffName: string, timeLabel: string, chip: CellChip) => void;
   customEvents: CustomEventData[];
 }
 
 const CalendarContext = createContext<CalendarContextType>({
   availabilityMode: false,
+  availableTimeColumns: new Set(),
   selectedSlot: null,
   onSlotClick: () => {},
   onDoubleClickSlot: () => {},
   onConflictClick: () => {},
+  onChipClick: () => {},
   customEvents: [],
 });
 
 export interface CalendarSubsectionProps {
   availabilityMode?: boolean;
+  availabilityFilters?: { startTime: string; endTime: string } | null;
   selectedSlot?: { staffName: string; timeLabel: string } | null;
   onSlotClick?: (staffName: string, timeLabel: string) => void;
   onDoubleClickSlot?: (staffName: string, timeLabel: string) => void;
   onConflictClick?: (staffName: string, timeLabel: string, events: string[]) => void;
+  onChipClick?: (staffName: string, timeLabel: string, chip: CellChip) => void;
   customEvents?: CustomEventData[];
 }
 
-const staffNames = [
+const ALL_STAFF = [
   "Alan Thomas",
   "Michael Schaj",
   "Anna Sorokin",
@@ -62,6 +68,17 @@ const timeColumns = [
   "10:00 AM", "11:00 AM", "12:00 PM", "01:00 PM",
   "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM",
 ];
+
+function timeToMinutes(t: string): number {
+  const parts = t.split(" ");
+  const [hStr, mStr] = parts[0].split(":");
+  const period = parts[1];
+  let h = parseInt(hStr, 10);
+  const m = parseInt(mStr, 10);
+  if (period === "PM" && h !== 12) h += 12;
+  if (period === "AM" && h === 12) h = 0;
+  return h * 60 + m;
+}
 
 const calendarData: Record<string, Record<string, CellChip[]>> = {
   "Alan Thomas": {
@@ -202,51 +219,115 @@ interface RowCellProps {
 const CELL_WIDTH = 283;
 
 const RowCell = ({ staffName, timeLabel, chips }: RowCellProps) => {
-  const { availabilityMode, selectedSlot, onSlotClick, onDoubleClickSlot, onConflictClick } =
-    useContext(CalendarContext);
+  const {
+    availabilityMode,
+    availableTimeColumns,
+    selectedSlot,
+    onSlotClick,
+    onDoubleClickSlot,
+    onConflictClick,
+    onChipClick,
+  } = useContext(CalendarContext);
+
+  const [hoveredChipIdx, setHoveredChipIdx] = useState<number | null>(null);
 
   const isConflict = chips.length >= 2;
   const isEmpty = chips.length === 0;
-  const isAvailable = availabilityMode && isEmpty;
+  const isInRange = availableTimeColumns.has(timeLabel);
+  const isAvailable = availabilityMode && isEmpty && isInRange;
+  const isDimmed = availabilityMode && !isInRange;
   const isSelected =
     selectedSlot?.staffName === staffName && selectedSlot?.timeLabel === timeLabel;
 
   let bgClass = "bg-[#f8f9fa]";
   if (isSelected) bgClass = "bg-[#bfdbfe] ring-2 ring-inset ring-[#0065f4]";
-  else if (isAvailable) bgClass = "bg-[#e5effd] hover:bg-[#c7d9fc]";
+  else if (isAvailable) bgClass = "bg-[#dbeafe] hover:bg-[#bfdbfe]";
+  else if (availabilityMode && !isEmpty && isInRange) bgClass = "bg-[#f8f9fa]";
+  else if (isDimmed) bgClass = "bg-[#f8f9fa] opacity-50";
   else if (isConflict) bgClass = "bg-[#fff7ed]";
 
-  const chipWidth = chips.length === 1
-    ? CELL_WIDTH - 2
-    : Math.floor((CELL_WIDTH - 4) / chips.length);
+  const chipWidth =
+    chips.length === 1
+      ? CELL_WIDTH - 2
+      : Math.floor((CELL_WIDTH - 4) / chips.length);
 
   return (
     <div
-      className={`relative h-10 border-b border-r border-[#dcdfe3] overflow-hidden flex items-center transition-colors ${bgClass} ${
-        isAvailable ? "cursor-pointer group" : "cursor-default"
+      className={`relative h-10 border-b border-r border-[#dcdfe3] overflow-visible flex items-center transition-colors ${bgClass} ${
+        isAvailable ? "cursor-pointer group" : chips.length > 0 ? "cursor-default" : "cursor-default"
       }`}
       style={{ width: CELL_WIDTH }}
       onClick={isAvailable ? () => onSlotClick(staffName, timeLabel) : undefined}
       onDoubleClick={() => onDoubleClickSlot(staffName, timeLabel)}
-      title={isAvailable ? `Click to schedule · Double-click to add event` : `Double-click to add event here`}
       data-testid={`cell-${staffName}-${timeLabel}`}
     >
       {/* Chips */}
       {chips.length > 0 && (
-        <div className="flex items-center h-[37px] gap-px overflow-hidden relative top-px pl-px">
+        <div className="flex items-center h-[37px] gap-px relative top-px pl-px" style={{ width: CELL_WIDTH - 2, overflow: "visible" }}>
           {chips.map((chip, i) => (
             <div
               key={i}
-              className="flex flex-col items-start justify-center pl-2 pr-1 pt-0.5 pb-1 overflow-hidden border-l-4 border-solid h-[37px] rounded flex-shrink-0"
-              style={{
-                width: chipWidth,
-                backgroundColor: chip.bg,
-                borderLeftColor: chip.border,
-              }}
+              className="relative flex-shrink-0 h-[37px] group/chip"
+              style={{ width: chipWidth }}
             >
-              <span className="text-[10px] font-bold text-[#252627] truncate block w-full leading-tight">
-                {chip.label}
-              </span>
+              {/* The chip itself */}
+              <div
+                className="flex flex-col items-start justify-center pl-2 pr-1 pt-0.5 pb-1 overflow-hidden border-l-4 border-solid h-[37px] rounded cursor-pointer transition-all duration-100 w-full"
+                style={{
+                  backgroundColor: hoveredChipIdx === i
+                    ? lightenColor(chip.bg)
+                    : chip.bg,
+                  borderLeftColor: chip.border,
+                  outline: hoveredChipIdx === i ? `2px solid ${chip.border}` : "none",
+                  outlineOffset: "-1px",
+                  boxShadow: hoveredChipIdx === i ? "0 2px 8px rgba(0,0,0,0.12)" : "none",
+                }}
+                onMouseEnter={() => setHoveredChipIdx(i)}
+                onMouseLeave={() => setHoveredChipIdx(null)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onChipClick(staffName, timeLabel, chip);
+                }}
+                data-testid={`chip-${staffName}-${timeLabel}-${i}`}
+              >
+                <span className="text-[10px] font-bold text-[#252627] truncate block w-full leading-tight pointer-events-none">
+                  {chip.label}
+                </span>
+              </div>
+
+              {/* Hover tooltip */}
+              {hoveredChipIdx === i && (
+                <div
+                  className="absolute bottom-full left-0 mb-1 z-50 pointer-events-none"
+                  style={{ minWidth: 200, maxWidth: 280 }}
+                >
+                  <div
+                    className="bg-white rounded-lg shadow-xl border border-[#e8e8e8] p-2.5"
+                    style={{ borderLeft: `3px solid ${chip.border}` }}
+                  >
+                    <p className="text-xs font-bold text-[#0e1828] leading-snug mb-1 font-['Inter',sans-serif]">
+                      {chip.label}
+                    </p>
+                    <div className="flex items-center gap-2 text-[10px] text-[#6b7280] font-['Inter',sans-serif]">
+                      <span>{staffName}</span>
+                      <span>·</span>
+                      <span>{timeLabel}</span>
+                    </div>
+                    <p className="text-[10px] text-[#0065f4] mt-1 font-semibold font-['Inter',sans-serif]">
+                      Click to view details
+                    </p>
+                  </div>
+                  {/* Arrow */}
+                  <div
+                    className="absolute left-3 top-full w-0 h-0"
+                    style={{
+                      borderLeft: "5px solid transparent",
+                      borderRight: "5px solid transparent",
+                      borderTop: "5px solid #e8e8e8",
+                    }}
+                  />
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -267,7 +348,7 @@ const RowCell = ({ staffName, timeLabel, chips }: RowCellProps) => {
         </button>
       )}
 
-      {/* Availability hover hint */}
+      {/* Availability slot hover hint */}
       {isAvailable && (
         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
           <span className="text-[9px] font-semibold text-[#0065f4] bg-white/90 px-1.5 py-0.5 rounded shadow-sm">
@@ -276,7 +357,7 @@ const RowCell = ({ staffName, timeLabel, chips }: RowCellProps) => {
         </div>
       )}
 
-      {/* Selected state label */}
+      {/* Selected label */}
       {isSelected && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <span className="text-[9px] font-bold text-[#0065f4]">Selected</span>
@@ -286,97 +367,188 @@ const RowCell = ({ staffName, timeLabel, chips }: RowCellProps) => {
   );
 };
 
+function lightenColor(hex: string): string {
+  if (!hex.startsWith("#") || hex.length < 7) return hex;
+  const r = Math.min(255, parseInt(hex.slice(1, 3), 16) + 10);
+  const g = Math.min(255, parseInt(hex.slice(3, 5), 16) + 10);
+  const b = Math.min(255, parseInt(hex.slice(5, 7), 16) + 10);
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+}
+
 export const CalendarSubsection = ({
   availabilityMode = false,
+  availabilityFilters = null,
   selectedSlot = null,
   onSlotClick = () => {},
   onDoubleClickSlot = () => {},
   onConflictClick = () => {},
+  onChipClick = () => {},
   customEvents = [],
 }: CalendarSubsectionProps): JSX.Element => {
+
+  // Compute which time columns fall within the search window
+  const availableTimeColumns = useMemo<Set<string>>(() => {
+    if (!availabilityFilters) return new Set(timeColumns);
+    const start = timeToMinutes(availabilityFilters.startTime);
+    const end = timeToMinutes(availabilityFilters.endTime);
+    return new Set(
+      timeColumns.filter((t) => {
+        const tm = timeToMinutes(t);
+        return tm >= start && tm < end;
+      })
+    );
+  }, [availabilityFilters]);
+
+  // Sort staff by available slots in the search window when mode is active
+  const displayedStaff = useMemo(() => {
+    if (!availabilityMode || !availabilityFilters) return ALL_STAFF;
+    const filteredTimes = [...availableTimeColumns];
+    return [...ALL_STAFF].sort((a, b) => {
+      const freeSlots = (name: string) =>
+        filteredTimes.filter((t) => {
+          const base = calendarData[name]?.[t] || [];
+          const hasCustom = customEvents.some(
+            (e) => e.staffName === name && e.startTime === t
+          );
+          return base.length === 0 && !hasCustom;
+        }).length;
+      return freeSlots(b) - freeSlots(a);
+    });
+  }, [availabilityMode, availabilityFilters, availableTimeColumns, customEvents]);
+
   const colCount = timeColumns.length;
 
   return (
     <CalendarContext.Provider
-      value={{ availabilityMode, selectedSlot, onSlotClick, onDoubleClickSlot, onConflictClick, customEvents }}
+      value={{
+        availabilityMode,
+        availableTimeColumns,
+        selectedSlot,
+        onSlotClick,
+        onDoubleClickSlot,
+        onConflictClick,
+        onChipClick,
+        customEvents,
+      }}
     >
       <div
         className="w-full border border-solid border-[#e8e8e8] overflow-auto rounded-sm"
         style={{ maxHeight: "504px" }}
         data-testid="calendar-grid"
       >
-        {/* CSS-grid container: sticky corner + time headers + sticky names + cells */}
+        {/* Availability banner */}
+        {availabilityMode && availabilityFilters && (
+          <div className="sticky top-0 z-40 bg-[#e5effd] border-b border-[#93c5fd] px-4 py-1.5 flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-[#3b82f6] flex-shrink-0" />
+            <span className="text-xs font-semibold text-[#1d4ed8] font-['Inter',sans-serif]">
+              Showing availability: {availabilityFilters.startTime} – {availabilityFilters.endTime}
+              &nbsp;·&nbsp;
+              Staff sorted by most available slots first
+            </span>
+          </div>
+        )}
+
         <div
           style={{
             display: "grid",
             gridTemplateColumns: `181px repeat(${colCount}, ${CELL_WIDTH}px)`,
-            gridTemplateRows: `40px repeat(${staffNames.length}, 40px)`,
+            gridTemplateRows: `40px repeat(${displayedStaff.length}, 40px)`,
             width: "max-content",
             minWidth: "100%",
           }}
         >
-          {/* ── Corner cell (sticky top-left) ── */}
+          {/* Corner */}
           <div
             className="sticky top-0 left-0 z-30 bg-white border-b border-r border-[#dcdfe3]"
             style={{ gridColumn: 1, gridRow: 1 }}
           />
 
-          {/* ── Time column headers (sticky top) ── */}
-          {timeColumns.map((time, ci) => (
-            <div
-              key={time}
-              className="sticky top-0 z-20 bg-white border-b border-r border-[#dcdfe3] flex items-center px-3"
-              style={{ gridColumn: ci + 2, gridRow: 1 }}
-            >
-              <span className="[font-family:'Inter',Helvetica] font-medium text-[#0e1828] text-sm">
-                {time}
-              </span>
-            </div>
-          ))}
-
-          {/* ── Staff rows ── */}
-          {staffNames.map((staff, si) => (
-            <React.Fragment key={staff}>
-              {/* Staff name cell (sticky left) */}
+          {/* Time headers */}
+          {timeColumns.map((time, ci) => {
+            const inRange = availableTimeColumns.has(time);
+            return (
               <div
-                className="sticky left-0 z-10 bg-white border-b border-r border-[#dcdfe3] flex items-center px-4"
-                style={{ gridColumn: 1, gridRow: si + 2 }}
+                key={time}
+                className={`sticky top-0 z-20 border-b border-r border-[#dcdfe3] flex items-center px-3 transition-colors ${
+                  availabilityMode && inRange
+                    ? "bg-[#eff6ff]"
+                    : availabilityMode
+                    ? "bg-white opacity-60"
+                    : "bg-white"
+                }`}
+                style={{ gridColumn: ci + 2, gridRow: 1 }}
               >
-                <span className="[font-family:'Inter',Helvetica] font-medium text-[#0e1828] text-sm whitespace-nowrap">
-                  {staff}
+                <span className={`[font-family:'Inter',Helvetica] font-medium text-sm ${
+                  availabilityMode && inRange ? "text-[#1d4ed8]" : "text-[#0e1828]"
+                }`}>
+                  {time}
                 </span>
+                {availabilityMode && inRange && (
+                  <span className="ml-1.5 text-[8px] font-bold text-[#3b82f6] leading-none">✓</span>
+                )}
               </div>
+            );
+          })}
 
-              {/* Time cells */}
-              {timeColumns.map((time, ci) => {
-                const baseChips = calendarData[staff]?.[time] || [];
-                const customEvent = customEvents.find(
-                  (e) => e.staffName === staff && e.startTime === time
-                );
-                const allChips: CellChip[] = [
-                  ...baseChips,
-                  ...(customEvent
-                    ? [
-                        {
+          {/* Staff rows */}
+          {displayedStaff.map((staff, si) => {
+            // Count free slots in range for availability badge
+            const freeInRange = availabilityMode
+              ? [...availableTimeColumns].filter((t) => {
+                  const base = calendarData[staff]?.[t] || [];
+                  const hasCustom = customEvents.some(
+                    (e) => e.staffName === staff && e.startTime === t
+                  );
+                  return base.length === 0 && !hasCustom;
+                }).length
+              : 0;
+
+            return (
+              <React.Fragment key={staff}>
+                {/* Staff name cell */}
+                <div
+                  className="sticky left-0 z-10 bg-white border-b border-r border-[#dcdfe3] flex items-center justify-between px-3"
+                  style={{ gridColumn: 1, gridRow: si + 2 }}
+                >
+                  <span className="[font-family:'Inter',Helvetica] font-medium text-[#0e1828] text-sm whitespace-nowrap">
+                    {staff}
+                  </span>
+                  {availabilityMode && freeInRange > 0 && (
+                    <span className="flex-shrink-0 text-[9px] font-bold text-white bg-[#3b82f6] rounded-full w-4 h-4 flex items-center justify-center ml-1">
+                      {freeInRange}
+                    </span>
+                  )}
+                </div>
+
+                {/* Time cells */}
+                {timeColumns.map((time, ci) => {
+                  const baseChips = calendarData[staff]?.[time] || [];
+                  const customEvent = customEvents.find(
+                    (e) => e.staffName === staff && e.startTime === time
+                  );
+                  const allChips: CellChip[] = [
+                    ...baseChips,
+                    ...(customEvent
+                      ? [{
                           bg: customEvent.color.bg,
                           border: customEvent.color.border,
                           label: customEvent.title,
-                        },
-                      ]
-                    : []),
-                ];
+                        }]
+                      : []),
+                  ];
 
-                return (
-                  <div
-                    key={`${staff}-${time}`}
-                    style={{ gridColumn: ci + 2, gridRow: si + 2 }}
-                  >
-                    <RowCell staffName={staff} timeLabel={time} chips={allChips} />
-                  </div>
-                );
-              })}
-            </React.Fragment>
-          ))}
+                  return (
+                    <div
+                      key={`${staff}-${time}`}
+                      style={{ gridColumn: ci + 2, gridRow: si + 2 }}
+                    >
+                      <RowCell staffName={staff} timeLabel={time} chips={allChips} />
+                    </div>
+                  );
+                })}
+              </React.Fragment>
+            );
+          })}
         </div>
       </div>
     </CalendarContext.Provider>

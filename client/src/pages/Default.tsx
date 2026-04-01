@@ -348,10 +348,13 @@ export const Default = (): JSX.Element => {
   };
 
   const handleChangeTime = () => {
-    setPrefilledSlot(
-      conflictEvent ? { staffName: conflictEvent.staffName, timeLabel: "" } : null
-    );
-    setShowNewEventModal(true);
+    if (conflictEvent) {
+      // Open as Edit Event so all existing data (title, staff, job type…)
+      // stays intact — the user only needs to pick a different time.
+      setEditEventData(conflictEvent);
+      setShowConflictDialog(false);
+      setShowNewEventModal(true);
+    }
   };
 
   // ─── Drag and drop ────────────────────────────────────────────────────────

@@ -49,6 +49,10 @@ interface CalendarContextType {
   onDragOverCell: (staffName: string, timeLabel: string) => void;
   onDragLeaveCell: () => void;
   onDropOnCell: (targetStaff: string, targetTime: string) => void;
+  // chip duration resize
+  chipDurations: Record<string, number>;
+  onDurationChange: (chipKey: string, delta: number) => void;
+  continuationCells: Set<string>;
 }
 
 const CalendarContext = createContext<CalendarContextType>({
@@ -68,6 +72,9 @@ const CalendarContext = createContext<CalendarContextType>({
   onDragOverCell: () => {},
   onDragLeaveCell: () => {},
   onDropOnCell: () => {},
+  chipDurations: {},
+  onDurationChange: () => {},
+  continuationCells: new Set(),
 });
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -274,9 +281,13 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow }: RowCellProps) 
     onDragOverCell,
     onDragLeaveCell,
     onDropOnCell,
+    chipDurations,
+    onDurationChange,
+    continuationCells,
   } = useContext(CalendarContext);
 
   const [hoveredChipIdx, setHoveredChipIdx] = useState<number | null>(null);
+  const isContinuation = continuationCells.has(`${staffName}||${timeLabel}`);
 
   const isConflict = chips.length >= 2;
   const isEmpty    = chips.length === 0;
@@ -295,12 +306,29 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow }: RowCellProps) 
     bgClass = "bg-[#f8f9fa] opacity-50";
   else if (isConflict) bgClass = "bg-[#fff7ed]";
 
-  const canClickSlot = availabilityMode && isEmpty && isInRange && !isSelected;
+  const canClickSlot = availabilityMode && isEmpty && isInRange && !isSelected && !isContinuation;
 
   const chipWidth =
     chips.length === 1
       ? CELL_WIDTH - 2
       : Math.floor((CELL_WIDTH - 4) / chips.length);
+
+  if (isContinuation && chips.length === 0) {
+    return (
+      <div
+        className="relative h-10 border-b border-r border-[#dcdfe3] flex items-center overflow-hidden"
+        style={{ width: CELL_WIDTH, backgroundColor: "#f5f3ff" }}
+        title="Continuation of previous job"
+        data-testid={`cell-continuation-${staffName}-${timeLabel}`}
+      >
+        <div className="absolute inset-0 flex items-center pl-2">
+          <div className="h-[28px] w-full rounded bg-[#ede9fe] border border-[#c4b5fd] border-dashed flex items-center px-2">
+            <span className="text-[10px] text-[#7c3aed] font-medium truncate">← continued</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -369,12 +397,44 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow }: RowCellProps) 
                     <span className="text-[10px] font-bold text-[#252627] truncate flex-1 leading-tight pointer-events-none">
                       {chip.label}
                     </span>
+                    {(() => {
+                      const chipKey = `${staffName}||${timeLabel}||${i}`;
+                      const dur = chipDurations[chipKey] || 1;
+                      return dur > 1 ? (
+                        <span className="text-[8px] font-black bg-[#7c3aed] text-white px-1 rounded leading-none flex-shrink-0 pointer-events-none">
+                          {dur}h
+                        </span>
+                      ) : null;
+                    })()}
                     {statusBadge && (
                       <span className={`text-[7px] font-black px-0.5 rounded leading-none flex-shrink-0 pointer-events-none ${statusBadge.cls}`}>
                         {statusBadge.label}
                       </span>
                     )}
                   </div>
+                  {/* Duration ± buttons (visible on chip hover) */}
+                  {hoveredChipIdx === i && (
+                    <div className="flex items-center gap-0.5 mt-0.5 pointer-events-auto">
+                      {(() => {
+                        const chipKey = `${staffName}||${timeLabel}||${i}`;
+                        const dur = chipDurations[chipKey] || 1;
+                        return (
+                          <>
+                            <button
+                              className="w-4 h-4 rounded bg-white/80 border border-[#d1d5db] text-[9px] font-black text-[#374151] hover:bg-[#f3f4f6] flex items-center justify-center leading-none"
+                              onClick={(e) => { e.stopPropagation(); if (dur > 1) onDurationChange(chipKey, -1); }}
+                              title="Decrease duration"
+                            >−</button>
+                            <button
+                              className="w-4 h-4 rounded bg-white/80 border border-[#d1d5db] text-[9px] font-black text-[#374151] hover:bg-[#f3f4f6] flex items-center justify-center leading-none"
+                              onClick={(e) => { e.stopPropagation(); onDurationChange(chipKey, +1); }}
+                              title="Increase duration"
+                            >+</button>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )}
                 </div>
 
                 {/* Hover tooltip */}
@@ -497,6 +557,17 @@ export const CalendarSubsection = ({
   removedBaseChips = new Set(),
 }: CalendarSubsectionProps): JSX.Element => {
 
+  // ── Chip durations state ─────────────────────────────────────────────────────
+  const [chipDurations, setChipDurations] = useState<Record<string, number>>({});
+
+  const handleDurationChange = useCallback((chipKey: string, delta: number) => {
+    setChipDurations((prev) => {
+      const current = prev[chipKey] || 1;
+      const next = Math.max(1, Math.min(current + delta, timeColumns.length));
+      return { ...prev, [chipKey]: next };
+    });
+  }, []);
+
   // ── Drag state ──────────────────────────────────────────────────────────────
   const dragDataRef = useRef<DragChipData | null>(null);
   const [dragSourceKey, setDragSourceKey] = useState<string | null>(null);
@@ -544,23 +615,70 @@ export const CalendarSubsection = ({
     );
   }, [availabilityFilters]);
 
+  const getFreeSlots = useCallback((name: string, filteredTimes: string[]) =>
+    filteredTimes.filter((t) => {
+      const base = (calendarData[name]?.[t] || []).filter(
+        (_, idx) => !removedBaseChips.has(`${name}||${t}||${idx}`)
+      );
+      const hasCustom = customEvents.some((e) => e.staffName === name && e.startTime === t);
+      return base.length === 0 && !hasCustom;
+    }).length,
+  [customEvents, removedBaseChips]);
+
   const displayedStaff = useMemo(() => {
     if (!availabilityMode || !availabilityFilters) return ALL_STAFF;
     const filteredTimes = [...availableTimeColumns];
+    const total = filteredTimes.length;
     return [...ALL_STAFF].sort((a, b) => {
-      const freeSlots = (name: string) =>
-        filteredTimes.filter((t) => {
-          const base = (calendarData[name]?.[t] || []).filter(
-            (_, idx) => !removedBaseChips.has(`${name}||${t}||${idx}`)
-          );
-          const hasCustom = customEvents.some((e) => e.staffName === name && e.startTime === t);
-          return base.length === 0 && !hasCustom;
-        }).length;
-      return freeSlots(b) - freeSlots(a);
+      const aFree = getFreeSlots(a, filteredTimes);
+      const bFree = getFreeSlots(b, filteredTimes);
+      const aFull = aFree === total ? 1 : 0;
+      const bFull = bFree === total ? 1 : 0;
+      if (aFull !== bFull) return bFull - aFull;
+      return bFree - aFree;
     });
-  }, [availabilityMode, availabilityFilters, availableTimeColumns, customEvents, removedBaseChips]);
+  }, [availabilityMode, availabilityFilters, availableTimeColumns, getFreeSlots]);
 
-  const suggestedStaff = availabilityMode && displayedStaff.length > 0 ? displayedStaff[0] : null;
+  const suggestedStaff = useMemo(() => {
+    if (!availabilityMode || !displayedStaff.length) return null;
+    const filteredTimes = [...availableTimeColumns];
+    if (filteredTimes.length === 0) return displayedStaff[0];
+    return displayedStaff.find((name) =>
+      filteredTimes.every((t) => {
+        const base = (calendarData[name]?.[t] || []).filter(
+          (_, idx) => !removedBaseChips.has(`${name}||${t}||${idx}`)
+        );
+        const hasCustom = customEvents.some((e) => e.staffName === name && e.startTime === t);
+        return base.length === 0 && !hasCustom;
+      })
+    ) || displayedStaff[0];
+  }, [availabilityMode, displayedStaff, availableTimeColumns, customEvents, removedBaseChips]);
+
+  // ── Continuation cells ───────────────────────────────────────────────────────
+  const continuationCells = useMemo<Set<string>>(() => {
+    const covered = new Set<string>();
+    for (const staff of ALL_STAFF) {
+      for (const [timeIdx, time] of timeColumns.entries()) {
+        const baseChips = (calendarData[staff]?.[time] || []).filter(
+          (_, idx) => !removedBaseChips.has(`${staff}||${time}||${idx}`)
+        );
+        const customChips = customEvents.filter((e) => e.staffName === staff && e.startTime === time);
+        const totalCount = baseChips.length + customChips.length;
+        for (let chipIdx = 0; chipIdx < totalCount; chipIdx++) {
+          const chipKey = `${staff}||${time}||${chipIdx}`;
+          const duration = chipDurations[chipKey] || 1;
+          if (duration > 1) {
+            for (let d = 1; d < duration; d++) {
+              if (timeIdx + d < timeColumns.length) {
+                covered.add(`${staff}||${timeColumns[timeIdx + d]}`);
+              }
+            }
+          }
+        }
+      }
+    }
+    return covered;
+  }, [chipDurations, customEvents, removedBaseChips]);
 
   const colCount = timeColumns.length;
 
@@ -583,6 +701,9 @@ export const CalendarSubsection = ({
         onDragOverCell: handleDragOverCell,
         onDragLeaveCell: handleDragLeaveCell,
         onDropOnCell: handleDropOnCell,
+        chipDurations,
+        onDurationChange: handleDurationChange,
+        continuationCells,
       }}
     >
       <div
@@ -605,7 +726,7 @@ export const CalendarSubsection = ({
                 </span>
                 <span className="text-xs text-[#3b82f6] font-['Inter',sans-serif]">·</span>
                 <span className="text-xs text-[#1d4ed8] font-['Inter',sans-serif]">
-                  Staff sorted by most free slots
+                  Fully available staff ranked first
                 </span>
               </>
             )}

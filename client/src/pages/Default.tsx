@@ -3,6 +3,7 @@ import {
   PlusIcon, CalendarDaysIcon, Users2Icon, ClipboardListIcon,
   MapIcon, Settings2Icon, CheckCircle2, X, Search
 } from "lucide-react";
+import albiLogo from "@assets/albi_icon_sky_white_1775052250721.png";
 import { Button } from "@/components/ui/button";
 import { CalendarSubsection, CustomEventData, CellChip, DragChipData } from "./sections/CalendarSubsection";
 import { FrameSubsection } from "./sections/FrameSubsection";
@@ -140,7 +141,7 @@ export const Default = (): JSX.Element => {
     setAvailabilityMode(true);
     setSelectedSlot(null);
     showSuccess(
-      `Showing availability ${filters.startTime}–${filters.endTime} · Staff sorted by most free slots · Click blue cell or double-click to schedule`
+      `Showing availability ${filters.startTime}–${filters.endTime} (${filters.duration}) · Fully available staff ranked first · Click blue cell to schedule`
     );
   };
 
@@ -306,48 +307,42 @@ export const Default = (): JSX.Element => {
   return (
     <div className="w-[1440px] min-h-screen flex gap-0 bg-[#f8f9fa]">
       {/* ── Sidebar ── */}
-      <aside className="w-[72px] min-h-screen flex flex-col items-center bg-[#0f1f3d] border-r border-[#1a3060] flex-shrink-0">
+      <aside className="w-[78px] min-h-screen flex flex-col items-center bg-white border-r border-[#e8e8e8] flex-shrink-0">
         {/* Logo */}
-        <div className="flex items-center justify-center w-full h-[60px] border-b border-[#1a3060]">
-          <div className="w-9 h-9 rounded-xl bg-[#0065f4] flex items-center justify-center shadow-lg">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M10 2L3 16h4.5l1.5-3.5h2L12.5 16H17L10 2z" fill="white"/>
-              <path d="M7.5 10.5h5" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
-          </div>
+        <div className="flex items-center justify-center w-full h-[85px]">
+          <img src={albiLogo} alt="Albi" className="w-10 h-10 object-contain" />
         </div>
 
         {/* Main nav */}
-        <nav className="flex flex-col items-center w-full gap-0.5 px-2 pt-3 flex-1">
+        <nav className="flex flex-col items-center w-full flex-1 pt-1">
           {mainNavItems.map((item) => {
             const Icon = item.icon;
             return (
-              <button
-                key={item.label}
-                className={`flex flex-col items-center justify-center w-full h-[52px] rounded-lg gap-1 transition-colors ${
-                  item.active
-                    ? "bg-[#0065f4] text-white"
-                    : "text-[#8fa5cc] hover:bg-[#1a3060] hover:text-white"
-                }`}
-                title={item.label}
-                data-testid={`nav-${item.label.toLowerCase()}`}
-              >
-                <Icon className="w-[18px] h-[18px]" />
-                <span className="text-[9px] font-medium leading-none tracking-wide uppercase">{item.label}</span>
-              </button>
+              <div key={item.label} className="w-full h-12 flex items-center justify-center">
+                <button
+                  className={`flex items-center justify-center rounded-[6px] transition-colors ${
+                    item.active
+                      ? "bg-[#f3f4f6] p-2 text-[#344153]"
+                      : "p-2 text-[#9ca3af] hover:text-[#344153] hover:bg-[#f9fafb]"
+                  }`}
+                  title={item.label}
+                  data-testid={`nav-${item.label.toLowerCase()}`}
+                >
+                  <Icon className="w-6 h-6" />
+                </button>
+              </div>
             );
           })}
         </nav>
 
         {/* Bottom: Settings */}
-        <div className="flex flex-col items-center w-full gap-0.5 px-2 pb-4">
+        <div className="w-full h-12 flex items-center justify-center mb-3">
           <button
-            className="flex flex-col items-center justify-center w-full h-[52px] rounded-lg gap-1 text-[#8fa5cc] hover:bg-[#1a3060] hover:text-white transition-colors"
+            className="p-2 text-[#9ca3af] hover:text-[#344153] hover:bg-[#f9fafb] rounded-[6px] transition-colors"
             title="Settings"
             data-testid="nav-settings"
           >
-            <Settings2Icon className="w-[18px] h-[18px]" />
-            <span className="text-[9px] font-medium leading-none tracking-wide uppercase">Settings</span>
+            <Settings2Icon className="w-6 h-6" />
           </button>
         </div>
       </aside>
@@ -355,7 +350,7 @@ export const Default = (): JSX.Element => {
       {/* ── Main content ── */}
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
         {/* Top bar */}
-        <div className="flex-shrink-0 bg-white border-b border-[#e8e8e8] px-6 py-3 h-[60px] flex items-center">
+        <div className="flex-shrink-0 bg-white border-b border-[#e8e8e8] px-6 h-[85px] flex items-center">
           <FrameSubsection />
         </div>
 

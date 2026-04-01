@@ -60,6 +60,34 @@ const timeOptions = [
   "04:00 PM", "04:30 PM", "05:00 PM",
 ];
 
+// ─── Time helpers ─────────────────────────────────────────────────────────────
+
+function parseTimeToMinutes(time: string): number {
+  const [timePart, period] = time.split(" ");
+  const [hStr, mStr] = timePart.split(":");
+  let h = parseInt(hStr, 10);
+  const m = parseInt(mStr, 10);
+  if (period === "PM" && h !== 12) h += 12;
+  if (period === "AM" && h === 12) h = 0;
+  return h * 60 + m;
+}
+
+function parseDurationMinutes(duration: string): number {
+  if (duration === "30 minutes") return 30;
+  if (duration === "Full Day") return 8 * 60;
+  const match = duration.match(/(\d+)/);
+  return match ? parseInt(match[1]) * 60 : 60;
+}
+
+function getEndTimeForDuration(startTime: string, duration: string): string {
+  const startMins = parseTimeToMinutes(startTime);
+  const durationMins = parseDurationMinutes(duration);
+  const targetMins = Math.min(startMins + durationMins, parseTimeToMinutes("05:00 PM"));
+  return timeOptions.reduce((best, t) => {
+    return Math.abs(parseTimeToMinutes(t) - targetMins) < Math.abs(parseTimeToMinutes(best) - targetMins) ? t : best;
+  });
+}
+
 export const AvailabilitySearchSheet = ({
   open,
   onClose,
@@ -68,7 +96,7 @@ export const AvailabilitySearchSheet = ({
   const [filters, setFilters] = useState<AvailabilityFilters>({
     date: "2026-05-27",
     startTime: "10:00 AM",
-    endTime: "01:00 PM",
+    endTime: "11:00 AM",
     skillType: "Any",
     duration: "1 hour",
     minStaff: "1",
@@ -129,7 +157,10 @@ export const AvailabilitySearchSheet = ({
               </Label>
               <Select
                 value={filters.startTime}
-                onValueChange={(v) => setFilters({ ...filters, startTime: v })}
+                onValueChange={(v) => {
+                  const newEnd = getEndTimeForDuration(v, filters.duration);
+                  setFilters({ ...filters, startTime: v, endTime: newEnd });
+                }}
               >
                 <SelectTrigger
                   className="h-10 border-[#dedede] text-sm font-['Inter',sans-serif]"
@@ -147,8 +178,9 @@ export const AvailabilitySearchSheet = ({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif]">
+              <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif] flex items-center gap-1">
                 End Time
+                <span className="text-[10px] text-[#9ca3af] font-normal">(auto)</span>
               </Label>
               <Select
                 value={filters.endTime}
@@ -178,7 +210,10 @@ export const AvailabilitySearchSheet = ({
             </Label>
             <Select
               value={filters.duration}
-              onValueChange={(v) => setFilters({ ...filters, duration: v })}
+              onValueChange={(v) => {
+                const newEnd = getEndTimeForDuration(filters.startTime, v);
+                setFilters({ ...filters, duration: v, endTime: newEnd });
+              }}
             >
               <SelectTrigger
                 className="h-10 border-[#dedede] text-sm font-['Inter',sans-serif]"

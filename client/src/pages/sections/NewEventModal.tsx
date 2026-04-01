@@ -114,6 +114,27 @@ function getStatusConfig(status: StaffStatus) {
   return { dot: "bg-[#ef4444]", text: "text-[#dc2626]", badge: "bg-[#fee2e2] text-[#dc2626]", label: "Unavailable" };
 }
 
+const COLOR_PRESETS = [
+  { border: "#eca203", bg: "#fcf1d9" },
+  { border: "#8238bb", bg: "#f2ebf8" },
+  { border: "#0063ec", bg: "#e5effd" },
+  { border: "#007c54", bg: "#e5f1ed" },
+  { border: "#ef4444", bg: "#fef2f2" },
+  { border: "#f97316", bg: "#fff7ed" },
+  { border: "#6366f1", bg: "#eef2ff" },
+  { border: "#0891b2", bg: "#e0f2fe" },
+  { border: "#ec4899", bg: "#fdf2f8" },
+];
+
+const attendeeOptions = [
+  "Stephany Chandler Jr.",
+  "Marcus Webb",
+  "Alicia Torres",
+  "James Holloway",
+  "Priya Nair",
+  "Devon Caldwell",
+];
+
 const defaultForm = (prefilledSlot?: PrefilledSlot | null) => ({
   title: "",
   reference: generateRef(),
@@ -127,6 +148,10 @@ const defaultForm = (prefilledSlot?: PrefilledSlot | null) => ({
   location: "",
   clientName: "",
   priority: "medium",
+  timezone: "UTC -06:00 Central",
+  repeat: "Never",
+  requiredAttendee: "Stephany Chandler Jr.",
+  optionalAttendee: "",
 });
 
 export const NewEventModal = ({
@@ -140,6 +165,7 @@ export const NewEventModal = ({
   const [form, setForm] = useState(defaultForm(prefilledSlot));
   const [isSplitCoverage, setIsSplitCoverage] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [colorOverride, setColorOverride] = useState<{ bg: string; border: string } | null>(null);
 
   // Re-sync form whenever modal opens or prefilledSlot changes
   useEffect(() => {
@@ -147,10 +173,12 @@ export const NewEventModal = ({
       setForm(defaultForm(prefilledSlot));
       setIsSplitCoverage(false);
       setErrors({});
+      setColorOverride(null);
     }
   }, [open, prefilledSlot?.staffName, prefilledSlot?.timeLabel]);
 
   const selectedJobType = jobTypes.find((j) => j.value === form.jobType) || jobTypes[0];
+  const effectiveColor = colorOverride || selectedJobType.color;
 
   // Live availability: recomputes whenever startTime changes
   const staffStatuses = useMemo<Record<string, StaffStatus>>(() => {
@@ -200,7 +228,7 @@ export const NewEventModal = ({
       location: form.location,
       clientName: form.clientName,
       priority: form.priority,
-      color: selectedJobType.color,
+      color: effectiveColor,
       isSplitCoverage,
     };
     if (conflictMsg) {
@@ -311,31 +339,22 @@ export const NewEventModal = ({
             />
           </div>
 
-          {/* Date */}
+          {/* Starts */}
           <div className="space-y-1.5">
-            <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif] flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-[#6b7280]" />
-              Date
+            <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif]">
+              Starts <span className="text-red-500">*</span>
             </Label>
-            <Input
-              type="date"
-              value={form.date}
-              onChange={(e) => f("date", e.target.value)}
-              className="h-10 text-sm font-['Inter',sans-serif] border-[#dedede]"
-              data-testid="new-event-date-input"
-            />
-          </div>
-
-          {/* Time Range */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif] flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-[#6b7280]" />
-                Start Time <span className="text-red-500">*</span>
-              </Label>
+            <div className="flex gap-2">
+              <Input
+                type="date"
+                value={form.date}
+                onChange={(e) => f("date", e.target.value)}
+                className="h-10 text-sm font-['Inter',sans-serif] border-[#dedede] flex-1"
+                data-testid="new-event-date-input"
+              />
               <Select value={form.startTime} onValueChange={(v) => f("startTime", v)}>
                 <SelectTrigger
-                  className={`h-10 text-sm font-['Inter',sans-serif] ${errors.startTime ? "border-red-400" : "border-[#dedede]"}`}
+                  className={`h-10 text-sm font-['Inter',sans-serif] w-[140px] ${errors.startTime ? "border-red-400" : "border-[#dedede]"}`}
                   data-testid="new-event-start-time"
                 >
                   <SelectValue />
@@ -347,14 +366,23 @@ export const NewEventModal = ({
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif] flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-[#6b7280]" />
-                End Time <span className="text-red-500">*</span>
-              </Label>
+          </div>
+
+          {/* Ends */}
+          <div className="space-y-1.5">
+            <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif]">
+              Ends <span className="text-red-500">*</span>
+            </Label>
+            <div className="flex gap-2 items-center">
+              <Input
+                type="date"
+                value={form.date}
+                readOnly
+                className="h-10 text-sm font-['Inter',sans-serif] border-[#dedede] flex-1 bg-[#fafafa]"
+              />
               <Select value={form.endTime} onValueChange={(v) => f("endTime", v)}>
                 <SelectTrigger
-                  className={`h-10 text-sm font-['Inter',sans-serif] ${errors.endTime ? "border-red-400" : "border-[#dedede]"}`}
+                  className={`h-10 text-sm font-['Inter',sans-serif] w-[140px] ${errors.endTime ? "border-red-400" : "border-[#dedede]"}`}
                   data-testid="new-event-end-time"
                 >
                   <SelectValue />
@@ -366,6 +394,86 @@ export const NewEventModal = ({
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          {/* All Day + Time Zone + Repeat row */}
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-[#344153] font-['Inter',sans-serif]">
+              <input type="checkbox" className="w-4 h-4 rounded accent-[#0065f4]" data-testid="new-event-allday" />
+              All Day
+            </label>
+          </div>
+
+          {/* Time Zone */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif]">
+                Time Zone
+              </Label>
+              <Select value={form.timezone} onValueChange={(v) => f("timezone", v)}>
+                <SelectTrigger className="h-10 text-sm font-['Inter',sans-serif] border-[#dedede]" data-testid="new-event-timezone">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="UTC -06:00 Central" className="text-sm">(UTC -06:00) Central</SelectItem>
+                  <SelectItem value="UTC -05:00 Eastern" className="text-sm">(UTC -05:00) Eastern</SelectItem>
+                  <SelectItem value="UTC -07:00 Mountain" className="text-sm">(UTC -07:00) Mountain</SelectItem>
+                  <SelectItem value="UTC -08:00 Pacific" className="text-sm">(UTC -08:00) Pacific</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif]">
+                Repeat
+              </Label>
+              <Select value={form.repeat} onValueChange={(v) => f("repeat", v)}>
+                <SelectTrigger className="h-10 text-sm font-['Inter',sans-serif] border-[#dedede]" data-testid="new-event-repeat">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Never" className="text-sm">Never</SelectItem>
+                  <SelectItem value="Daily" className="text-sm">Daily</SelectItem>
+                  <SelectItem value="Weekly" className="text-sm">Weekly</SelectItem>
+                  <SelectItem value="Bi-Weekly" className="text-sm">Bi-Weekly</SelectItem>
+                  <SelectItem value="Monthly" className="text-sm">Monthly</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Required Attendee */}
+          <div className="space-y-1.5">
+            <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif]">
+              Required
+            </Label>
+            <Select value={form.requiredAttendee} onValueChange={(v) => f("requiredAttendee", v)}>
+              <SelectTrigger className="h-10 text-sm font-['Inter',sans-serif] border-[#dedede]" data-testid="new-event-required-attendee">
+                <SelectValue placeholder="Select required attendee…" />
+              </SelectTrigger>
+              <SelectContent>
+                {attendeeOptions.map((a) => (
+                  <SelectItem key={a} value={a} className="text-sm">{a}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Optional Attendee */}
+          <div className="space-y-1.5">
+            <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif]">
+              Optional
+            </Label>
+            <Select value={form.optionalAttendee} onValueChange={(v) => f("optionalAttendee", v)}>
+              <SelectTrigger className="h-10 text-sm font-['Inter',sans-serif] border-[#dedede]" data-testid="new-event-optional-attendee">
+                <SelectValue placeholder="Select optional attendee…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none" className="text-sm text-[#9ca3af]">None</SelectItem>
+                {attendeeOptions.map((a) => (
+                  <SelectItem key={a} value={a} className="text-sm">{a}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* ── Staff Assignment ── */}
@@ -560,12 +668,45 @@ export const NewEventModal = ({
             </div>
           </div>
 
+          {/* Color Picker */}
+          <div className="space-y-1.5">
+            <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif]">
+              Job Color
+            </Label>
+            <div className="flex items-center gap-2 flex-wrap">
+              {COLOR_PRESETS.map((c) => {
+                const isSelected = colorOverride?.border === c.border;
+                return (
+                  <button
+                    key={c.border}
+                    onClick={() => setColorOverride(isSelected ? null : c)}
+                    className={`w-7 h-7 rounded-full border-2 transition-all hover:scale-110 ${
+                      isSelected ? "border-[#0e1828] scale-110 shadow-md" : "border-white shadow ring-1 ring-[#e8e8e8]"
+                    }`}
+                    style={{ backgroundColor: c.border }}
+                    title={isSelected ? "Reset to job type color" : "Set custom color"}
+                    data-testid={`color-swatch-${c.border.replace("#","")}`}
+                  />
+                );
+              })}
+              {colorOverride && (
+                <button
+                  onClick={() => setColorOverride(null)}
+                  className="text-xs text-[#9ca3af] hover:text-[#344153] transition-colors ml-1"
+                  data-testid="color-reset"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* Preview */}
           <div className="flex items-center gap-2">
             <span className="text-xs text-[#9ca3af] font-['Inter',sans-serif]">Preview:</span>
             <div
               className="inline-flex items-center px-2 py-1 rounded border-l-4 text-xs font-bold font-['Inter',sans-serif] text-[#252627]"
-              style={{ backgroundColor: selectedJobType.color.bg, borderLeftColor: selectedJobType.color.border }}
+              style={{ backgroundColor: effectiveColor.bg, borderLeftColor: effectiveColor.border }}
               data-testid="event-preview-badge"
             >
               {form.title || "Job Title"}

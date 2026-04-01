@@ -1,4 +1,9 @@
-import React, { createContext, useContext, useMemo, useState } from "react";
+import React, {
+  createContext, useContext, useMemo,
+  useState, useRef, useCallback,
+} from "react";
+
+// ─── Public types ──────────────────────────────────────────────────────────────
 
 export interface CustomEventData {
   id: string;
@@ -6,35 +11,66 @@ export interface CustomEventData {
   startTime: string;
   title: string;
   color: { bg: string; border: string };
+  status?: "new" | "moved" | "rescheduled";
 }
 
 export interface CellChip {
   bg: string;
   border: string;
   label: string;
+  status?: "new" | "moved" | "rescheduled";
+  customEventId?: string;
 }
+
+export interface DragChipData {
+  staffName: string;
+  timeLabel: string;
+  chipIndex: number;
+  chip: CellChip;
+}
+
+// ─── Context ──────────────────────────────────────────────────────────────────
 
 interface CalendarContextType {
   availabilityMode: boolean;
   availableTimeColumns: Set<string>;
   selectedSlot: { staffName: string; timeLabel: string } | null;
+  suggestedStaff: string | null;
   onSlotClick: (staffName: string, timeLabel: string) => void;
   onDoubleClickSlot: (staffName: string, timeLabel: string) => void;
   onConflictClick: (staffName: string, timeLabel: string, events: string[]) => void;
   onChipClick: (staffName: string, timeLabel: string, chip: CellChip) => void;
   customEvents: CustomEventData[];
+  // drag-and-drop
+  dragSourceKey: string | null;
+  dragOverCell: { staffName: string; timeLabel: string } | null;
+  onStartDrag: (data: DragChipData) => void;
+  onEndDrag: () => void;
+  onDragOverCell: (staffName: string, timeLabel: string) => void;
+  onDragLeaveCell: () => void;
+  onDropOnCell: (targetStaff: string, targetTime: string) => void;
 }
 
 const CalendarContext = createContext<CalendarContextType>({
   availabilityMode: false,
   availableTimeColumns: new Set(),
   selectedSlot: null,
+  suggestedStaff: null,
   onSlotClick: () => {},
   onDoubleClickSlot: () => {},
   onConflictClick: () => {},
   onChipClick: () => {},
   customEvents: [],
+  dragSourceKey: null,
+  dragOverCell: null,
+  onStartDrag: () => {},
+  onEndDrag: () => {},
+  onDragOverCell: () => {},
+  onDragLeaveCell: () => {},
+  onDropOnCell: () => {},
 });
+
+// ─── Props ────────────────────────────────────────────────────────────────────
 
 export interface CalendarSubsectionProps {
   availabilityMode?: boolean;
@@ -44,24 +80,18 @@ export interface CalendarSubsectionProps {
   onDoubleClickSlot?: (staffName: string, timeLabel: string) => void;
   onConflictClick?: (staffName: string, timeLabel: string, events: string[]) => void;
   onChipClick?: (staffName: string, timeLabel: string, chip: CellChip) => void;
+  onChipMoved?: (drag: DragChipData, targetStaff: string, targetTime: string) => void;
   customEvents?: CustomEventData[];
+  removedBaseChips?: Set<string>;
 }
 
+// ─── Static data ──────────────────────────────────────────────────────────────
+
 const ALL_STAFF = [
-  "Alan Thomas",
-  "Michael Schaj",
-  "Anna Sorokin",
-  "Connor Grace",
-  "Carmen Flores",
-  "Shamoil Soni",
-  "Chiara Bondesan",
-  "Christy Blaker",
-  "Adam Smith",
-  "Daniyal Shamoon",
-  "Michele Rave",
-  "Chandler Steffy",
-  "Bradley Lynch",
-  "Moasfar Javed",
+  "Alan Thomas", "Michael Schaj", "Anna Sorokin", "Connor Grace",
+  "Carmen Flores", "Shamoil Soni", "Chiara Bondesan", "Christy Blaker",
+  "Adam Smith", "Daniyal Shamoon", "Michele Rave", "Chandler Steffy",
+  "Bradley Lynch", "Moasfar Javed",
 ];
 
 const timeColumns = [
@@ -70,9 +100,8 @@ const timeColumns = [
 ];
 
 function timeToMinutes(t: string): number {
-  const parts = t.split(" ");
-  const [hStr, mStr] = parts[0].split(":");
-  const period = parts[1];
+  const [timePart, period] = t.split(" ");
+  const [hStr, mStr] = timePart.split(":");
   let h = parseInt(hStr, 10);
   const m = parseInt(mStr, 10);
   if (period === "PM" && h !== 12) h += 12;
@@ -210,15 +239,26 @@ const calendarData: Record<string, Record<string, CellChip[]>> = {
   },
 };
 
+// ─── Status badge ─────────────────────────────────────────────────────────────
+
+const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
+  new:         { label: "NEW",   cls: "bg-[#22c55e] text-white" },
+  moved:       { label: "↕ MOVED", cls: "bg-[#3b82f6] text-white" },
+  rescheduled: { label: "RESCHD", cls: "bg-[#f97316] text-white" },
+};
+
+// ─── Cell ────────────────────────────────────────────────────────────────────
+
 interface RowCellProps {
   staffName: string;
   timeLabel: string;
   chips: CellChip[];
+  isSuggestedRow?: boolean;
 }
 
 const CELL_WIDTH = 283;
 
-const RowCell = ({ staffName, timeLabel, chips }: RowCellProps) => {
+const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow }: RowCellProps) => {
   const {
     availabilityMode,
     availableTimeColumns,
@@ -227,24 +267,35 @@ const RowCell = ({ staffName, timeLabel, chips }: RowCellProps) => {
     onDoubleClickSlot,
     onConflictClick,
     onChipClick,
+    dragSourceKey,
+    dragOverCell,
+    onStartDrag,
+    onEndDrag,
+    onDragOverCell,
+    onDragLeaveCell,
+    onDropOnCell,
   } = useContext(CalendarContext);
 
   const [hoveredChipIdx, setHoveredChipIdx] = useState<number | null>(null);
 
   const isConflict = chips.length >= 2;
-  const isEmpty = chips.length === 0;
-  const isInRange = availableTimeColumns.has(timeLabel);
-  const isAvailable = availabilityMode && isEmpty && isInRange;
-  const isDimmed = availabilityMode && !isInRange;
-  const isSelected =
-    selectedSlot?.staffName === staffName && selectedSlot?.timeLabel === timeLabel;
+  const isEmpty    = chips.length === 0;
+  const isInRange  = availableTimeColumns.has(timeLabel);
+  const isSelected = selectedSlot?.staffName === staffName && selectedSlot?.timeLabel === timeLabel;
+  const isDragTarget = dragOverCell?.staffName === staffName && dragOverCell?.timeLabel === timeLabel;
 
   let bgClass = "bg-[#f8f9fa]";
-  if (isSelected) bgClass = "bg-[#bfdbfe] ring-2 ring-inset ring-[#0065f4]";
-  else if (isAvailable) bgClass = "bg-[#dbeafe] hover:bg-[#bfdbfe]";
-  else if (availabilityMode && !isEmpty && isInRange) bgClass = "bg-[#f8f9fa]";
-  else if (isDimmed) bgClass = "bg-[#f8f9fa] opacity-50";
+  if (isDragTarget)   bgClass = "bg-[#eff6ff] ring-2 ring-inset ring-[#3b82f6]";
+  else if (isSelected) bgClass = "bg-[#bfdbfe] ring-2 ring-inset ring-[#0065f4]";
+  else if (availabilityMode && isSuggestedRow && isInRange && isEmpty)
+    bgClass = "bg-[#fffbeb] hover:bg-[#fef3c7] cursor-pointer";
+  else if (availabilityMode && isEmpty && isInRange)
+    bgClass = "bg-[#f8f9fa] hover:bg-[#f3f8ff] cursor-pointer";
+  else if (availabilityMode && !isInRange)
+    bgClass = "bg-[#f8f9fa] opacity-50";
   else if (isConflict) bgClass = "bg-[#fff7ed]";
+
+  const canClickSlot = availabilityMode && isEmpty && isInRange && !isSelected;
 
   const chipWidth =
     chips.length === 1
@@ -254,82 +305,121 @@ const RowCell = ({ staffName, timeLabel, chips }: RowCellProps) => {
   return (
     <div
       className={`relative h-10 border-b border-r border-[#dcdfe3] overflow-visible flex items-center transition-colors ${bgClass} ${
-        isAvailable ? "cursor-pointer group" : chips.length > 0 ? "cursor-default" : "cursor-default"
+        canClickSlot ? "group" : ""
       }`}
       style={{ width: CELL_WIDTH }}
-      onClick={isAvailable ? () => onSlotClick(staffName, timeLabel) : undefined}
+      onClick={canClickSlot ? () => onSlotClick(staffName, timeLabel) : undefined}
       onDoubleClick={() => onDoubleClickSlot(staffName, timeLabel)}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        onDragOverCell(staffName, timeLabel);
+      }}
+      onDragLeave={() => onDragLeaveCell()}
+      onDrop={(e) => {
+        e.preventDefault();
+        onDropOnCell(staffName, timeLabel);
+      }}
       data-testid={`cell-${staffName}-${timeLabel}`}
     >
       {/* Chips */}
       {chips.length > 0 && (
-        <div className="flex items-center h-[37px] gap-px relative top-px pl-px" style={{ width: CELL_WIDTH - 2, overflow: "visible" }}>
-          {chips.map((chip, i) => (
-            <div
-              key={i}
-              className="relative flex-shrink-0 h-[37px] group/chip"
-              style={{ width: chipWidth }}
-            >
-              {/* The chip itself */}
-              <div
-                className="flex flex-col items-start justify-center pl-2 pr-1 pt-0.5 pb-1 overflow-hidden border-l-4 border-solid h-[37px] rounded cursor-pointer transition-all duration-100 w-full"
-                style={{
-                  backgroundColor: hoveredChipIdx === i
-                    ? lightenColor(chip.bg)
-                    : chip.bg,
-                  borderLeftColor: chip.border,
-                  outline: hoveredChipIdx === i ? `2px solid ${chip.border}` : "none",
-                  outlineOffset: "-1px",
-                  boxShadow: hoveredChipIdx === i ? "0 2px 8px rgba(0,0,0,0.12)" : "none",
-                }}
-                onMouseEnter={() => setHoveredChipIdx(i)}
-                onMouseLeave={() => setHoveredChipIdx(null)}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onChipClick(staffName, timeLabel, chip);
-                }}
-                data-testid={`chip-${staffName}-${timeLabel}-${i}`}
-              >
-                <span className="text-[10px] font-bold text-[#252627] truncate block w-full leading-tight pointer-events-none">
-                  {chip.label}
-                </span>
-              </div>
+        <div
+          className="flex items-center h-[37px] gap-px relative top-px pl-px"
+          style={{ width: CELL_WIDTH - 2, overflow: "visible" }}
+        >
+          {chips.map((chip, i) => {
+            const chipKey = `${staffName}||${timeLabel}||${i}`;
+            const isDragSource = dragSourceKey === chipKey;
+            const statusBadge = chip.status ? STATUS_BADGE[chip.status] : null;
 
-              {/* Hover tooltip */}
-              {hoveredChipIdx === i && (
+            return (
+              <div
+                key={i}
+                className="relative flex-shrink-0 h-[37px] group/chip"
+                style={{ width: chipWidth }}
+              >
+                {/* Chip */}
                 <div
-                  className="absolute bottom-full left-0 mb-1 z-50 pointer-events-none"
-                  style={{ minWidth: 200, maxWidth: 280 }}
+                  className={`flex flex-col items-start justify-center pl-2 pr-1 pt-0.5 pb-1 overflow-hidden border-l-4 border-solid h-[37px] rounded cursor-grab transition-all duration-100 w-full select-none ${
+                    isDragSource ? "opacity-30" : ""
+                  }`}
+                  style={{
+                    backgroundColor: hoveredChipIdx === i ? lightenColor(chip.bg) : chip.bg,
+                    borderLeftColor: chip.border,
+                    outline: hoveredChipIdx === i ? `2px solid ${chip.border}` : "none",
+                    outlineOffset: "-1px",
+                    boxShadow: hoveredChipIdx === i ? "0 2px 8px rgba(0,0,0,0.12)" : "none",
+                  }}
+                  draggable
+                  onDragStart={(e) => {
+                    onStartDrag({ staffName, timeLabel, chipIndex: i, chip });
+                    e.dataTransfer.effectAllowed = "move";
+                  }}
+                  onDragEnd={onEndDrag}
+                  onMouseEnter={() => setHoveredChipIdx(i)}
+                  onMouseLeave={() => setHoveredChipIdx(null)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onChipClick(staffName, timeLabel, chip);
+                  }}
+                  data-testid={`chip-${staffName}-${timeLabel}-${i}`}
                 >
-                  <div
-                    className="bg-white rounded-lg shadow-xl border border-[#e8e8e8] p-2.5"
-                    style={{ borderLeft: `3px solid ${chip.border}` }}
-                  >
-                    <p className="text-xs font-bold text-[#0e1828] leading-snug mb-1 font-['Inter',sans-serif]">
+                  <div className="flex items-center gap-1 w-full min-w-0">
+                    <span className="text-[10px] font-bold text-[#252627] truncate flex-1 leading-tight pointer-events-none">
                       {chip.label}
-                    </p>
-                    <div className="flex items-center gap-2 text-[10px] text-[#6b7280] font-['Inter',sans-serif]">
-                      <span>{staffName}</span>
-                      <span>·</span>
-                      <span>{timeLabel}</span>
-                    </div>
-                    <p className="text-[10px] text-[#0065f4] mt-1 font-semibold font-['Inter',sans-serif]">
-                      Click to view details
-                    </p>
+                    </span>
+                    {statusBadge && (
+                      <span className={`text-[7px] font-black px-0.5 rounded leading-none flex-shrink-0 pointer-events-none ${statusBadge.cls}`}>
+                        {statusBadge.label}
+                      </span>
+                    )}
                   </div>
-                  {/* Arrow */}
-                  <div
-                    className="absolute left-3 top-full w-0 h-0"
-                    style={{
-                      borderLeft: "5px solid transparent",
-                      borderRight: "5px solid transparent",
-                      borderTop: "5px solid #e8e8e8",
-                    }}
-                  />
                 </div>
-              )}
-            </div>
-          ))}
+
+                {/* Hover tooltip */}
+                {hoveredChipIdx === i && !isDragSource && (
+                  <div
+                    className="absolute bottom-full left-0 mb-1 z-50 pointer-events-none"
+                    style={{ minWidth: 200, maxWidth: 300 }}
+                  >
+                    <div
+                      className="bg-white rounded-lg shadow-xl border border-[#e8e8e8] p-2.5"
+                      style={{ borderLeft: `3px solid ${chip.border}` }}
+                    >
+                      <p className="text-xs font-bold text-[#0e1828] leading-snug mb-1 font-['Inter',sans-serif]">
+                        {chip.label}
+                      </p>
+                      <div className="flex items-center gap-2 text-[10px] text-[#6b7280] font-['Inter',sans-serif]">
+                        <span>{staffName}</span>
+                        <span>·</span>
+                        <span>{timeLabel}</span>
+                        {chip.status && (
+                          <>
+                            <span>·</span>
+                            <span className={`px-1 py-0.5 rounded text-[8px] font-bold ${STATUS_BADGE[chip.status].cls}`}>
+                              {STATUS_BADGE[chip.status].label}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-[#6b7280] mt-1 font-['Inter',sans-serif]">
+                        Click to view · Drag to reschedule
+                      </p>
+                    </div>
+                    <div
+                      className="absolute left-3 top-full w-0 h-0"
+                      style={{
+                        borderLeft: "5px solid transparent",
+                        borderRight: "5px solid transparent",
+                        borderTop: "5px solid #e8e8e8",
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -348,11 +438,28 @@ const RowCell = ({ staffName, timeLabel, chips }: RowCellProps) => {
         </button>
       )}
 
-      {/* Availability slot hover hint */}
-      {isAvailable && (
-        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-          <span className="text-[9px] font-semibold text-[#0065f4] bg-white/90 px-1.5 py-0.5 rounded shadow-sm">
-            + Schedule
+      {/* Drop zone hint (no chips, in-range, availability mode) */}
+      {availabilityMode && isEmpty && isInRange && (
+        <div className={`absolute inset-0 flex items-center justify-center pointer-events-none transition-opacity ${
+          isDragTarget ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+        }`}>
+          <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded shadow-sm ${
+            isDragTarget
+              ? "text-[#1d4ed8] bg-[#dbeafe]"
+              : isSuggestedRow
+              ? "text-[#d97706] bg-white/90"
+              : "text-[#6b7280] bg-white/90"
+          }`}>
+            {isDragTarget ? "Drop here" : isSuggestedRow ? "★ Schedule here" : "+ Schedule"}
+          </span>
+        </div>
+      )}
+
+      {/* Drag target overlay (non-availability mode) */}
+      {isDragTarget && !availabilityMode && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <span className="text-[9px] font-semibold text-[#1d4ed8] bg-[#dbeafe] px-1.5 py-0.5 rounded shadow-sm">
+            Drop here
           </span>
         </div>
       )}
@@ -375,6 +482,8 @@ function lightenColor(hex: string): string {
   return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
 }
 
+// ─── Main component ───────────────────────────────────────────────────────────
+
 export const CalendarSubsection = ({
   availabilityMode = false,
   availabilityFilters = null,
@@ -383,14 +492,50 @@ export const CalendarSubsection = ({
   onDoubleClickSlot = () => {},
   onConflictClick = () => {},
   onChipClick = () => {},
+  onChipMoved,
   customEvents = [],
+  removedBaseChips = new Set(),
 }: CalendarSubsectionProps): JSX.Element => {
 
-  // Compute which time columns fall within the search window
+  // ── Drag state ──────────────────────────────────────────────────────────────
+  const dragDataRef = useRef<DragChipData | null>(null);
+  const [dragSourceKey, setDragSourceKey] = useState<string | null>(null);
+  const [dragOverCell, setDragOverCell] = useState<{ staffName: string; timeLabel: string } | null>(null);
+
+  const handleStartDrag = useCallback((data: DragChipData) => {
+    dragDataRef.current = data;
+    setDragSourceKey(`${data.staffName}||${data.timeLabel}||${data.chipIndex}`);
+  }, []);
+
+  const handleEndDrag = useCallback(() => {
+    dragDataRef.current = null;
+    setDragSourceKey(null);
+    setDragOverCell(null);
+  }, []);
+
+  const handleDragOverCell = useCallback((staffName: string, timeLabel: string) => {
+    setDragOverCell({ staffName, timeLabel });
+  }, []);
+
+  const handleDragLeaveCell = useCallback(() => {
+    setDragOverCell(null);
+  }, []);
+
+  const handleDropOnCell = useCallback((targetStaff: string, targetTime: string) => {
+    const drag = dragDataRef.current;
+    setDragSourceKey(null);
+    setDragOverCell(null);
+    dragDataRef.current = null;
+    if (!drag) return;
+    if (drag.staffName === targetStaff && drag.timeLabel === targetTime) return;
+    onChipMoved?.(drag, targetStaff, targetTime);
+  }, [onChipMoved]);
+
+  // ── Availability ────────────────────────────────────────────────────────────
   const availableTimeColumns = useMemo<Set<string>>(() => {
     if (!availabilityFilters) return new Set(timeColumns);
     const start = timeToMinutes(availabilityFilters.startTime);
-    const end = timeToMinutes(availabilityFilters.endTime);
+    const end   = timeToMinutes(availabilityFilters.endTime);
     return new Set(
       timeColumns.filter((t) => {
         const tm = timeToMinutes(t);
@@ -399,22 +544,23 @@ export const CalendarSubsection = ({
     );
   }, [availabilityFilters]);
 
-  // Sort staff by available slots in the search window when mode is active
   const displayedStaff = useMemo(() => {
     if (!availabilityMode || !availabilityFilters) return ALL_STAFF;
     const filteredTimes = [...availableTimeColumns];
     return [...ALL_STAFF].sort((a, b) => {
       const freeSlots = (name: string) =>
         filteredTimes.filter((t) => {
-          const base = calendarData[name]?.[t] || [];
-          const hasCustom = customEvents.some(
-            (e) => e.staffName === name && e.startTime === t
+          const base = (calendarData[name]?.[t] || []).filter(
+            (_, idx) => !removedBaseChips.has(`${name}||${t}||${idx}`)
           );
+          const hasCustom = customEvents.some((e) => e.staffName === name && e.startTime === t);
           return base.length === 0 && !hasCustom;
         }).length;
       return freeSlots(b) - freeSlots(a);
     });
-  }, [availabilityMode, availabilityFilters, availableTimeColumns, customEvents]);
+  }, [availabilityMode, availabilityFilters, availableTimeColumns, customEvents, removedBaseChips]);
+
+  const suggestedStaff = availabilityMode && displayedStaff.length > 0 ? displayedStaff[0] : null;
 
   const colCount = timeColumns.length;
 
@@ -424,11 +570,19 @@ export const CalendarSubsection = ({
         availabilityMode,
         availableTimeColumns,
         selectedSlot,
+        suggestedStaff,
         onSlotClick,
         onDoubleClickSlot,
         onConflictClick,
         onChipClick,
         customEvents,
+        dragSourceKey,
+        dragOverCell,
+        onStartDrag: handleStartDrag,
+        onEndDrag: handleEndDrag,
+        onDragOverCell: handleDragOverCell,
+        onDragLeaveCell: handleDragLeaveCell,
+        onDropOnCell: handleDropOnCell,
       }}
     >
       <div
@@ -438,13 +592,23 @@ export const CalendarSubsection = ({
       >
         {/* Availability banner */}
         {availabilityMode && availabilityFilters && (
-          <div className="sticky top-0 z-40 bg-[#e5effd] border-b border-[#93c5fd] px-4 py-1.5 flex items-center gap-2">
+          <div className="sticky top-0 z-40 bg-[#e5effd] border-b border-[#93c5fd] px-4 py-1.5 flex items-center gap-2 flex-wrap">
             <div className="w-3 h-3 rounded-full bg-[#3b82f6] flex-shrink-0" />
             <span className="text-xs font-semibold text-[#1d4ed8] font-['Inter',sans-serif]">
-              Showing availability: {availabilityFilters.startTime} – {availabilityFilters.endTime}
-              &nbsp;·&nbsp;
-              Staff sorted by most available slots first
+              Searching: {availabilityFilters.startTime}–{availabilityFilters.endTime}
             </span>
+            {suggestedStaff && (
+              <>
+                <span className="text-xs text-[#3b82f6] font-['Inter',sans-serif]">·</span>
+                <span className="flex items-center gap-1 text-xs font-bold text-[#d97706] bg-[#fef9c3] border border-[#fde68a] px-2 py-0.5 rounded-md font-['Inter',sans-serif]">
+                  ★ Best match: {suggestedStaff}
+                </span>
+                <span className="text-xs text-[#3b82f6] font-['Inter',sans-serif]">·</span>
+                <span className="text-xs text-[#1d4ed8] font-['Inter',sans-serif]">
+                  Staff sorted by most free slots
+                </span>
+              </>
+            )}
           </div>
         )}
 
@@ -492,13 +656,14 @@ export const CalendarSubsection = ({
 
           {/* Staff rows */}
           {displayedStaff.map((staff, si) => {
-            // Count free slots in range for availability badge
+            const isSuggested = staff === suggestedStaff;
+
             const freeInRange = availabilityMode
               ? [...availableTimeColumns].filter((t) => {
-                  const base = calendarData[staff]?.[t] || [];
-                  const hasCustom = customEvents.some(
-                    (e) => e.staffName === staff && e.startTime === t
+                  const base = (calendarData[staff]?.[t] || []).filter(
+                    (_, idx) => !removedBaseChips.has(`${staff}||${t}||${idx}`)
                   );
+                  const hasCustom = customEvents.some((e) => e.staffName === staff && e.startTime === t);
                   return base.length === 0 && !hasCustom;
                 }).length
               : 0;
@@ -507,34 +672,58 @@ export const CalendarSubsection = ({
               <React.Fragment key={staff}>
                 {/* Staff name cell */}
                 <div
-                  className="sticky left-0 z-10 bg-white border-b border-r border-[#dcdfe3] flex items-center justify-between px-3"
+                  className={`sticky left-0 z-10 border-b border-r border-[#dcdfe3] flex items-center justify-between px-3 transition-colors ${
+                    isSuggested
+                      ? "bg-[#fffbeb] border-l-[3px] border-l-[#f59e0b]"
+                      : "bg-white"
+                  }`}
                   style={{ gridColumn: 1, gridRow: si + 2 }}
                 >
-                  <span className="[font-family:'Inter',Helvetica] font-medium text-[#0e1828] text-sm whitespace-nowrap">
-                    {staff}
-                  </span>
-                  {availabilityMode && freeInRange > 0 && (
-                    <span className="flex-shrink-0 text-[9px] font-bold text-white bg-[#3b82f6] rounded-full w-4 h-4 flex items-center justify-center ml-1">
-                      {freeInRange}
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    {isSuggested && (
+                      <span className="text-[10px] flex-shrink-0">★</span>
+                    )}
+                    <span className={`[font-family:'Inter',Helvetica] font-medium text-sm whitespace-nowrap truncate ${
+                      isSuggested ? "text-[#92400e] font-semibold" : "text-[#0e1828]"
+                    }`}>
+                      {staff}
                     </span>
-                  )}
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0 ml-1">
+                    {isSuggested && (
+                      <span className="text-[7px] font-black text-white bg-[#f59e0b] px-1 py-0.5 rounded leading-none">
+                        BEST
+                      </span>
+                    )}
+                    {availabilityMode && freeInRange > 0 && (
+                      <span className={`text-[9px] font-bold text-white rounded-full w-4 h-4 flex items-center justify-center ${
+                        isSuggested ? "bg-[#f59e0b]" : "bg-[#3b82f6]"
+                      }`}>
+                        {freeInRange}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Time cells */}
                 {timeColumns.map((time, ci) => {
-                  const baseChips = calendarData[staff]?.[time] || [];
-                  const customEvent = customEvents.find(
+                  const baseChips = (calendarData[staff]?.[time] || []).filter(
+                    (_, idx) => !removedBaseChips.has(`${staff}||${time}||${idx}`)
+                  );
+
+                  const matchingCustomEvents = customEvents.filter(
                     (e) => e.staffName === staff && e.startTime === time
                   );
+
                   const allChips: CellChip[] = [
                     ...baseChips,
-                    ...(customEvent
-                      ? [{
-                          bg: customEvent.color.bg,
-                          border: customEvent.color.border,
-                          label: customEvent.title,
-                        }]
-                      : []),
+                    ...matchingCustomEvents.map((ce) => ({
+                      bg: ce.color.bg,
+                      border: ce.color.border,
+                      label: ce.title,
+                      status: ce.status,
+                      customEventId: ce.id,
+                    })),
                   ];
 
                   return (
@@ -542,7 +731,12 @@ export const CalendarSubsection = ({
                       key={`${staff}-${time}`}
                       style={{ gridColumn: ci + 2, gridRow: si + 2 }}
                     >
-                      <RowCell staffName={staff} timeLabel={time} chips={allChips} />
+                      <RowCell
+                        staffName={staff}
+                        timeLabel={time}
+                        chips={allChips}
+                        isSuggestedRow={isSuggested}
+                      />
                     </div>
                   );
                 })}

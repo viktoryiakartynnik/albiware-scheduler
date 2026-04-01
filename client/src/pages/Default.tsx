@@ -4,7 +4,7 @@ import {
   MapPinIcon, SettingsIcon, CheckCircle2, X, Search
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { CalendarSubsection, CustomEventData, CellChip } from "./sections/CalendarSubsection";
+import { CalendarSubsection, CustomEventData, CellChip, DragChipData } from "./sections/CalendarSubsection";
 import { FrameSubsection } from "./sections/FrameSubsection";
 import { FrameWrapperSubsection } from "./sections/FrameWrapperSubsection";
 import { ViewControlsSubsection } from "./sections/ViewControlsSubsection";
@@ -112,6 +112,9 @@ export const Default = (): JSX.Element => {
   // Custom events added this session
   const [customEvents, setCustomEvents] = useState<CustomEventData[]>([]);
 
+  // Hardcoded chips that have been dragged away (key: staffName||timeLabel||index)
+  const [removedBaseChips, setRemovedBaseChips] = useState<Set<string>>(new Set());
+
   // Toast
   const [successToast, setSuccessToast] = useState<SuccessToast>({ message: "", visible: false });
 
@@ -205,6 +208,7 @@ export const Default = (): JSX.Element => {
       startTime: event.startTime,
       title: event.title || event.reference,
       color: event.color,
+      status: "new",
     };
     setCustomEvents((prev) => [...prev, newChip]);
 
@@ -217,6 +221,7 @@ export const Default = (): JSX.Element => {
           startTime: event.startTime,
           title: `${event.title || event.reference} (Split)`,
           color: { bg: "#fff7ed", border: "#f97316" },
+          status: "new" as const,
         },
       ]);
     }
@@ -258,6 +263,37 @@ export const Default = (): JSX.Element => {
       conflictEvent ? { staffName: conflictEvent.staffName, timeLabel: "" } : null
     );
     setShowNewEventModal(true);
+  };
+
+  // ─── Drag and drop ────────────────────────────────────────────────────────
+
+  const handleChipMoved = (drag: DragChipData, targetStaff: string, targetTime: string) => {
+    if (drag.chip.customEventId) {
+      // It's a custom event — update its position and mark as moved/rescheduled
+      setCustomEvents((prev) =>
+        prev.map((e) =>
+          e.id === drag.chip.customEventId
+            ? { ...e, staffName: targetStaff, startTime: targetTime, status: "moved" as const }
+            : e
+        )
+      );
+    } else {
+      // Hardcoded chip — mark source as removed and create new custom event at target
+      const key = `${drag.staffName}||${drag.timeLabel}||${drag.chipIndex}`;
+      setRemovedBaseChips((prev) => new Set([...prev, key]));
+      setCustomEvents((prev) => [
+        ...prev,
+        {
+          id: `moved-${Date.now()}`,
+          staffName: targetStaff,
+          startTime: targetTime,
+          title: drag.chip.label,
+          color: { bg: drag.chip.bg, border: drag.chip.border },
+          status: "moved" as const,
+        },
+      ]);
+    }
+    showSuccess(`"${drag.chip.label}" rescheduled → ${targetStaff} at ${targetTime}`);
   };
 
   // ─── Job Detail → "Add Event" ─────────────────────────────────────────
@@ -367,7 +403,7 @@ export const Default = (): JSX.Element => {
         <div className="px-6 pb-4 flex-shrink-0">
           <div className="flex items-center justify-between mb-1.5">
             <p className="text-xs text-[#9ca3af] font-['Inter',sans-serif]">
-              Hover a job to preview · Click to view details · Double-click any cell to add event
+              Hover a job to preview · Click to view details · Double-click cell to add · Drag to reschedule
             </p>
             {customEvents.length > 0 && (
               <span className="text-xs font-semibold text-[#0065f4] font-['Inter',sans-serif]">
@@ -384,7 +420,9 @@ export const Default = (): JSX.Element => {
             onDoubleClickSlot={handleDoubleClickSlot}
             onConflictClick={handleConflictCellClick}
             onChipClick={handleChipClick}
+            onChipMoved={handleChipMoved}
             customEvents={customEvents}
+            removedBaseChips={removedBaseChips}
           />
         </div>
 

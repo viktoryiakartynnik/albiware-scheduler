@@ -1,4 +1,4 @@
-import { AlertTriangle, Clock, User, RefreshCw, CalendarX, Zap, Eye } from "lucide-react";
+import { AlertTriangle, Clock, User, RefreshCw, CalendarX, Zap, Eye, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -78,6 +78,13 @@ export const ConflictResolutionDialog = ({
                 {conflictMessage}
               </p>
             </div>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-[#f3f4f6] text-[#6b7280] flex-shrink-0 transition-colors"
+              data-testid="close-conflict-dialog-x"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         </DialogHeader>
 

@@ -56,6 +56,7 @@ export interface PrefilledSlot {
   staffName: string;
   timeLabel: string;
   date?: string;
+  endTime?: string;
 }
 
 interface NewEventModalProps {
@@ -160,7 +161,7 @@ const defaultForm = (prefilledSlot?: PrefilledSlot | null) => ({
   reference: generateRef(),
   date: prefilledSlot?.date || "2026-05-27",
   startTime: prefilledSlot?.timeLabel || "10:00 AM",
-  endTime: "11:00 AM",
+  endTime: prefilledSlot?.endTime || "11:00 AM",
   staffNames: prefilledSlot?.staffName ? [prefilledSlot.staffName] : [] as string[],
   jobType: "plumbing",
   notes: "",
@@ -246,9 +247,13 @@ export const NewEventModal = ({
         setForm(defaultForm(prefilledSlot));
         setColorOverride(null);
         setSplitCoverage(defaultSplitCoverage);
+        const splitStart = prefilledSlot?.timeLabel || "10:00 AM";
+        const splitEnd   = prefilledSlot?.endTime   || "11:00 AM";
+        const splitMidIdx = Math.floor((timeOptions.indexOf(splitStart) + timeOptions.indexOf(splitEnd)) / 2);
+        const splitMid = timeOptions[Math.max(timeOptions.indexOf(splitStart) + 1, splitMidIdx)] || splitEnd;
         setSplitSegments([
-          { startTime: prefilledSlot?.timeLabel || "10:00 AM", endTime: "11:00 AM", staffName: "" },
-          { startTime: "11:00 AM", endTime: "12:00 PM", staffName: "" },
+          { startTime: splitStart, endTime: splitMid, staffName: "" },
+          { startTime: splitMid, endTime: splitEnd, staffName: "" },
         ]);
       }
       setErrors({});

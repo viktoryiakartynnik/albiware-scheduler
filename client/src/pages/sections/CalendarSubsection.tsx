@@ -109,6 +109,7 @@ export interface CalendarSubsectionProps {
   onChipClick?: (staffName: string, timeLabel: string, chip: CellChip, chipIndex: number) => void;
   onChipMoved?: (drag: DragChipData, targetStaff: string, targetTime: string) => void;
   onUnassignedDrop?: (card: UnassignedCard, targetStaff: string, targetTime: string) => void;
+  onOpenSplitCoverage?: () => void;
   customEvents?: CustomEventData[];
   removedBaseChips?: Set<string>;
 }
@@ -337,10 +338,8 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow, maxColumns, rowI
 
   return (
     <div
-      className={`relative min-h-[52px] h-auto border-b border-r border-[#dcdfe3] overflow-visible flex items-center transition-colors ${bgClass} ${
-        canClickSlot ? "group" : ""
-      }`}
-      style={{ width: "100%" }}
+      className={`relative h-full border-b border-r border-[#dcdfe3] overflow-visible flex items-center transition-colors group/cell ${bgClass}`}
+      style={{ width: "100%", minHeight: 52 }}
       onClick={canClickSlot ? () => onSlotClick(staffName, timeLabel) : undefined}
       onDoubleClick={() => onDoubleClickSlot(staffName, timeLabel)}
       onDragOver={(e) => {
@@ -360,6 +359,18 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow, maxColumns, rowI
       }}
       data-testid={`cell-${staffName}-${timeLabel}`}
     >
+      {/* Empty cell: + button on hover */}
+      {chips.length === 0 && (
+        <button
+          className="absolute top-1 right-1 z-10 w-5 h-5 rounded bg-white/0 border border-transparent flex items-center justify-center opacity-0 group-hover/cell:opacity-100 transition-all hover:bg-[#0065f4] hover:border-[#0065f4] hover:text-white text-[#9ca3af]"
+          title="Add job to this slot"
+          onClick={(e) => { e.stopPropagation(); onDoubleClickSlot(staffName, timeLabel); }}
+          data-testid={`add-empty-cell-${staffName}-${timeLabel}`}
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M5 1v8M1 5h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+        </button>
+      )}
+
       {/* Chips — single chip: horizontal fill; multiple chips: stacked vertically */}
       {chips.length === 1 && (() => {
         const chip = chips[0];
@@ -613,6 +624,7 @@ export const CalendarSubsection = ({
   onChipClick = () => {},
   onChipMoved,
   onUnassignedDrop,
+  onOpenSplitCoverage,
   customEvents = [],
   removedBaseChips = new Set(),
 }: CalendarSubsectionProps): JSX.Element => {
@@ -748,6 +760,22 @@ export const CalendarSubsection = ({
     );
   }, [availabilityMode, availabilityFilters, availableTimeColumns, displayedStaff, customEvents, removedBaseChips]);
 
+  // ── Per-row heights based on max chip count per row ──────────────────────────
+  // 1 chip  → 52px; n≥2 stacked chips → n×27 + 4px (each chip 26px + 1px gap + 4px top/bottom padding)
+  const rowHeights = useMemo<number[]>(() => {
+    return displayedStaff.map((staff) => {
+      const maxChips = timeColumns.reduce((acc, time) => {
+        const base = (calendarData[staff]?.[time] || []).filter(
+          (_, idx) => !removedBaseChips.has(`${staff}||${time}||${idx}`)
+        );
+        const custom = customEvents.filter((e) => e.staffName === staff && e.startTime === time);
+        return Math.max(acc, base.length + custom.length);
+      }, 0);
+      if (maxChips <= 1) return 52;
+      return maxChips * 27 + 4; // e.g. 2→58, 3→85, 4→112
+    });
+  }, [displayedStaff, customEvents, removedBaseChips]);
+
   // ── Continuation cells ───────────────────────────────────────────────────────
   const continuationCells = useMemo<Set<string>>(() => {
     const covered = new Set<string>();
@@ -841,10 +869,19 @@ export const CalendarSubsection = ({
                 <span className="text-xs text-[#78350f] font-['Inter',sans-serif]">
                   Consider using
                 </span>
-                <span className="inline-flex items-center gap-1 text-xs font-bold text-[#c2410c] bg-[#fff7ed] border border-[#fed7aa] px-2 py-0.5 rounded-md font-['Inter',sans-serif]">
+                <button
+                  type="button"
+                  onClick={() => onOpenSplitCoverage?.()}
+                  className={`inline-flex items-center gap-1 text-xs font-bold text-[#c2410c] bg-[#fff7ed] border border-[#fed7aa] px-2 py-0.5 rounded-md font-['Inter',sans-serif] transition-all ${
+                    onOpenSplitCoverage
+                      ? "hover:bg-[#fed7aa] hover:border-[#f97316] cursor-pointer"
+                      : "cursor-default"
+                  }`}
+                  data-testid="split-coverage-banner-btn"
+                >
                   <Users className="w-3 h-3" />
                   Split Coverage
-                </span>
+                </button>
                 <span className="text-xs text-[#78350f] font-['Inter',sans-serif]">
                   to combine two staff members for this time slot.
                 </span>
@@ -857,7 +894,7 @@ export const CalendarSubsection = ({
           style={{
             display: "grid",
             gridTemplateColumns: `${ROW_LABEL_W}px repeat(${colCount}, ${CELL_WIDTH}px)`,
-            gridTemplateRows: `40px repeat(${displayedStaff.length}, auto)`,
+            gridTemplateRows: `40px ${rowHeights.map((h) => `${h}px`).join(" ")}`,
             width: "max-content",
             minWidth: "100%",
           }}
@@ -993,6 +1030,7 @@ export const CalendarSubsection = ({
                       style={{
                         gridColumn: colSpan > 1 ? `${ci + 2} / span ${colSpan}` : ci + 2,
                         gridRow: si + 2,
+                        height: "100%",
                       }}
                     >
                       <RowCell

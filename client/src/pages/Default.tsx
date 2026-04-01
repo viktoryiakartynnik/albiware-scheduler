@@ -102,6 +102,7 @@ export const Default = (): JSX.Element => {
 
   // New event
   const [prefilledSlot, setPrefilledSlot] = useState<PrefilledSlot | null>(null);
+  const [newEventSplitDefault, setNewEventSplitDefault] = useState(false);
 
   // Edit event
   const [editEventData, setEditEventData] = useState<NewEventData | null>(null);
@@ -169,6 +170,17 @@ export const Default = (): JSX.Element => {
   // Double-click on ANY cell
   const handleDoubleClickSlot = (staffName: string, timeLabel: string) => {
     setPrefilledSlot({ staffName, timeLabel });
+    setShowNewEventModal(true);
+  };
+
+  // Open New Event modal with Split Coverage pre-enabled (from the search banner)
+  const handleOpenSplitCoverage = () => {
+    setPrefilledSlot({
+      staffName: "",
+      timeLabel: availabilityFilters?.startTime || "10:00 AM",
+      endTime:   availabilityFilters?.endTime   || "11:00 AM",
+    });
+    setNewEventSplitDefault(true);
     setShowNewEventModal(true);
   };
 
@@ -549,6 +561,7 @@ export const Default = (): JSX.Element => {
             onChipClick={handleChipClick}
             onChipMoved={handleChipMoved}
             onUnassignedDrop={handleUnassignedDrop}
+            onOpenSplitCoverage={handleOpenSplitCoverage}
             customEvents={customEvents}
             removedBaseChips={removedBaseChips}
           />
@@ -577,11 +590,13 @@ export const Default = (): JSX.Element => {
           setShowNewEventModal(false);
           setPrefilledSlot(null);
           setEditEventData(null);
+          setNewEventSplitDefault(false);
         }}
         onSave={handleSaveEvent}
         onConflict={handleConflict}
         prefilledSlot={prefilledSlot}
         editEventData={editEventData}
+        defaultSplitCoverage={newEventSplitDefault}
         existingEvents={allOccupiedSlots.map((e) => ({
           staffName: e.staffName,
           startTime: e.startTime,

@@ -524,7 +524,7 @@ export const Default = (): JSX.Element => {
 
         {/* ── Unassigned events ── */}
         <div className="px-6 pb-6">
-          <h2 className="font-medium text-[#666] text-xl font-['Inter',sans-serif] mb-3">
+          <h2 className="text-sm font-semibold text-[#666] font-['Inter',sans-serif] mb-3">
             Unassigned events
           </h2>
           <FrameWrapperSubsection />

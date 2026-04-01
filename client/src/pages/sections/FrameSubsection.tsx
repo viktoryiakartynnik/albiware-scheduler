@@ -15,10 +15,10 @@ export const FrameSubsection = (): JSX.Element => {
     <div className="flex w-full items-center justify-between">
       {/* Search bar */}
       <div className="relative flex-1 max-w-[441px]">
-        <div className={`flex h-10 items-center gap-2 px-3.5 py-2 w-full bg-white rounded-md border-2 border-solid transition-all ${
+        <div className={`flex h-10 items-center gap-2 px-3.5 py-2 w-full bg-white rounded-md border border-solid transition-all ${
           searchFocused
-            ? "border-[#0065f4] shadow-[0_0_0_3px_rgba(0,101,244,0.12)]"
-            : "border-[#dedede] shadow-sm"
+            ? "border-[#93b9f9] shadow-[0_0_0_2px_rgba(0,101,244,0.08)]"
+            : "border-[#e8e8e8]"
         }`}>
           <SearchIcon className={`w-4 h-4 flex-shrink-0 transition-colors ${searchFocused ? "text-[#0065f4]" : "text-[#9aa3b0]"}`} />
           <input

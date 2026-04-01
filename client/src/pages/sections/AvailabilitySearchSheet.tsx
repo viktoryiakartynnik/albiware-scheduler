@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Search, ChevronDown } from "lucide-react";
+import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -116,18 +116,9 @@ export const AvailabilitySearchSheet = ({
       >
         {/* Header */}
         <SheetHeader className="px-6 py-4 border-b border-[#e8e8e8] flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <SheetTitle className="text-[#0e1828] text-lg font-bold font-['Inter',sans-serif]">
-              Availability Search
-            </SheetTitle>
-            <button
-              onClick={onClose}
-              className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-[#f3f4f6] text-[#6b7280] transition-colors"
-              data-testid="close-availability-sheet"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+          <SheetTitle className="text-[#0e1828] text-lg font-bold font-['Inter',sans-serif] text-left">
+            Availability Search
+          </SheetTitle>
           <p className="text-sm text-[#6b7280] font-['Inter',sans-serif] text-left mt-0.5">
             Find available staff for your job requirements
           </p>
@@ -150,8 +141,8 @@ export const AvailabilitySearchSheet = ({
           </div>
 
           {/* Time Range */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
+          <div className="grid grid-cols-2 gap-3 items-end">
+            <div className="flex flex-col gap-1.5">
               <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif]">
                 Start Time
               </Label>
@@ -177,7 +168,7 @@ export const AvailabilitySearchSheet = ({
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5">
+            <div className="flex flex-col gap-1.5">
               <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif] flex items-center gap-1">
                 End Time
                 <span className="text-[10px] text-[#9ca3af] font-normal">(auto)</span>

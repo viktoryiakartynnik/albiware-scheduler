@@ -2,6 +2,7 @@ import React, {
   createContext, useContext, useMemo,
   useState, useRef, useCallback,
 } from "react";
+import { AlertTriangle, Users } from "lucide-react";
 
 // ─── Public types ──────────────────────────────────────────────────────────────
 
@@ -12,6 +13,7 @@ export interface CustomEventData {
   title: string;
   color: { bg: string; border: string };
   status?: "new" | "moved" | "rescheduled";
+  projectStatus?: string;
 }
 
 export interface CellChip {
@@ -20,6 +22,7 @@ export interface CellChip {
   label: string;
   status?: "new" | "moved" | "rescheduled";
   customEventId?: string;
+  projectStatus?: string;
 }
 
 export interface DragChipData {
@@ -39,7 +42,7 @@ interface CalendarContextType {
   onSlotClick: (staffName: string, timeLabel: string) => void;
   onDoubleClickSlot: (staffName: string, timeLabel: string) => void;
   onConflictClick: (staffName: string, timeLabel: string, events: string[]) => void;
-  onChipClick: (staffName: string, timeLabel: string, chip: CellChip) => void;
+  onChipClick: (staffName: string, timeLabel: string, chip: CellChip, chipIndex: number) => void;
   customEvents: CustomEventData[];
   // drag-and-drop
   dragSourceKey: string | null;
@@ -64,6 +67,7 @@ const CalendarContext = createContext<CalendarContextType>({
   onDoubleClickSlot: () => {},
   onConflictClick: () => {},
   onChipClick: () => {},
+  // ^ default no-op, override in provider
   customEvents: [],
   dragSourceKey: null,
   dragOverCell: null,
@@ -86,7 +90,7 @@ export interface CalendarSubsectionProps {
   onSlotClick?: (staffName: string, timeLabel: string) => void;
   onDoubleClickSlot?: (staffName: string, timeLabel: string) => void;
   onConflictClick?: (staffName: string, timeLabel: string, events: string[]) => void;
-  onChipClick?: (staffName: string, timeLabel: string, chip: CellChip) => void;
+  onChipClick?: (staffName: string, timeLabel: string, chip: CellChip, chipIndex: number) => void;
   onChipMoved?: (drag: DragChipData, targetStaff: string, targetTime: string) => void;
   customEvents?: CustomEventData[];
   removedBaseChips?: Set<string>;
@@ -309,7 +313,7 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow, maxColumns }: Ro
 
   return (
     <div
-      className={`relative h-10 border-b border-r border-[#dcdfe3] overflow-visible flex items-center transition-colors ${bgClass} ${
+      className={`relative h-9 border-b border-r border-[#dcdfe3] overflow-visible flex items-center transition-colors ${bgClass} ${
         canClickSlot ? "group" : ""
       }`}
       style={{ width: "100%" }}
@@ -330,7 +334,7 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow, maxColumns }: Ro
       {/* Chips */}
       {chips.length > 0 && (
         <div
-          className="flex items-center h-[37px] gap-px relative top-px pl-px"
+          className="flex items-center h-[33px] gap-px relative top-px pl-px"
           style={{ width: "100%", overflow: "visible" }}
         >
           {chips.map((chip, i) => {
@@ -343,12 +347,12 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow, maxColumns }: Ro
             return (
               <div
                 key={i}
-                className="relative h-[37px] group/chip min-w-0"
+                className="relative h-[33px] group/chip min-w-0"
                 style={{ flex: 1 }}
               >
                 {/* Chip body */}
                 <div
-                  className={`flex flex-col items-start justify-center pl-2 pt-0.5 pb-1 overflow-hidden border-l-4 border-solid h-[37px] rounded cursor-grab transition-all duration-100 w-full select-none ${
+                  className={`flex flex-col items-start justify-center pl-2 pt-0.5 pb-1 overflow-hidden border-l-4 border-solid h-[33px] rounded cursor-grab transition-all duration-100 w-full select-none ${
                     isDragSource ? "opacity-30" : ""
                   } ${isSingleChip ? "pr-4" : "pr-1"}`}
                   style={{
@@ -368,7 +372,7 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow, maxColumns }: Ro
                   onMouseLeave={() => setHoveredChipIdx(null)}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onChipClick(staffName, timeLabel, chip);
+                    onChipClick(staffName, timeLabel, chip, i);
                   }}
                   data-testid={`chip-${staffName}-${timeLabel}-${i}`}
                 >
@@ -386,6 +390,22 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow, maxColumns }: Ro
                         {statusBadge.label}
                       </span>
                     )}
+                    {chip.projectStatus && chip.projectStatus !== "not_started" && (() => {
+                      const psColors: Record<string, string> = {
+                        in_progress: "#3b82f6",
+                        on_hold: "#f59e0b",
+                        completed: "#22c55e",
+                        cancelled: "#ef4444",
+                      };
+                      const color = psColors[chip.projectStatus];
+                      return color ? (
+                        <span
+                          className="w-2 h-2 rounded-full flex-shrink-0 ring-1 ring-white pointer-events-none"
+                          style={{ backgroundColor: color }}
+                          title={chip.projectStatus.replace("_", " ")}
+                        />
+                      ) : null;
+                    })()}
                   </div>
                 </div>
 
@@ -644,6 +664,21 @@ export const CalendarSubsection = ({
     ) || displayedStaff[0];
   }, [availabilityMode, displayedStaff, availableTimeColumns, customEvents, removedBaseChips]);
 
+  const hasFullCoverage = useMemo(() => {
+    if (!availabilityMode || !availabilityFilters) return true;
+    const filteredTimes = [...availableTimeColumns];
+    if (filteredTimes.length === 0) return true;
+    return displayedStaff.some((name) =>
+      filteredTimes.every((t) => {
+        const base = (calendarData[name]?.[t] || []).filter(
+          (_, idx) => !removedBaseChips.has(`${name}||${t}||${idx}`)
+        );
+        const hasCustom = customEvents.some((e) => e.staffName === name && e.startTime === t);
+        return base.length === 0 && !hasCustom;
+      })
+    );
+  }, [availabilityMode, availabilityFilters, availableTimeColumns, displayedStaff, customEvents, removedBaseChips]);
+
   // ── Continuation cells ───────────────────────────────────────────────────────
   const continuationCells = useMemo<Set<string>>(() => {
     const covered = new Set<string>();
@@ -703,31 +738,53 @@ export const CalendarSubsection = ({
       >
         {/* Availability banner */}
         {availabilityMode && availabilityFilters && (
-          <div className="sticky top-0 z-40 bg-[#e5effd] border-b border-[#93c5fd] px-4 py-1.5 flex items-center gap-2 flex-wrap">
-            <div className="w-3 h-3 rounded-full bg-[#3b82f6] flex-shrink-0" />
-            <span className="text-xs font-semibold text-[#1d4ed8] font-['Inter',sans-serif]">
-              Searching: {availabilityFilters.startTime}–{availabilityFilters.endTime}
-            </span>
-            {suggestedStaff && (
-              <>
-                <span className="text-xs text-[#3b82f6] font-['Inter',sans-serif]">·</span>
-                <span className="flex items-center gap-1 text-xs font-bold text-[#d97706] bg-[#fef9c3] border border-[#fde68a] px-2 py-0.5 rounded-md font-['Inter',sans-serif]">
-                  ★ Best match: {suggestedStaff}
+          <>
+            <div className="sticky top-0 z-40 bg-[#e5effd] border-b border-[#93c5fd] px-4 py-1.5 flex items-center gap-2 flex-wrap">
+              <div className="w-3 h-3 rounded-full bg-[#3b82f6] flex-shrink-0" />
+              <span className="text-xs font-semibold text-[#1d4ed8] font-['Inter',sans-serif]">
+                Searching: {availabilityFilters.startTime}–{availabilityFilters.endTime}
+              </span>
+              {suggestedStaff && hasFullCoverage && (
+                <>
+                  <span className="text-xs text-[#3b82f6] font-['Inter',sans-serif]">·</span>
+                  <span className="flex items-center gap-1 text-xs font-bold text-[#d97706] bg-[#fef9c3] border border-[#fde68a] px-2 py-0.5 rounded-md font-['Inter',sans-serif]">
+                    ★ Best match: {suggestedStaff}
+                  </span>
+                  <span className="text-xs text-[#3b82f6] font-['Inter',sans-serif]">·</span>
+                  <span className="text-xs text-[#1d4ed8] font-['Inter',sans-serif]">
+                    Fully available staff ranked first
+                  </span>
+                </>
+              )}
+            </div>
+
+            {/* No full coverage warning */}
+            {!hasFullCoverage && (
+              <div className="sticky top-[34px] z-40 bg-[#fffbeb] border-b border-[#fde68a] px-4 py-2 flex items-center gap-2.5 flex-wrap">
+                <AlertTriangle className="w-4 h-4 text-[#d97706] flex-shrink-0" />
+                <span className="text-xs font-semibold text-[#92400e] font-['Inter',sans-serif]">
+                  No single staff member is fully available for this window.
                 </span>
-                <span className="text-xs text-[#3b82f6] font-['Inter',sans-serif]">·</span>
-                <span className="text-xs text-[#1d4ed8] font-['Inter',sans-serif]">
-                  Fully available staff ranked first
+                <span className="text-xs text-[#78350f] font-['Inter',sans-serif]">
+                  Consider using
                 </span>
-              </>
+                <span className="inline-flex items-center gap-1 text-xs font-bold text-[#c2410c] bg-[#fff7ed] border border-[#fed7aa] px-2 py-0.5 rounded-md font-['Inter',sans-serif]">
+                  <Users className="w-3 h-3" />
+                  Split Coverage
+                </span>
+                <span className="text-xs text-[#78350f] font-['Inter',sans-serif]">
+                  to combine two staff members for this time slot.
+                </span>
+              </div>
             )}
-          </div>
+          </>
         )}
 
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: `181px repeat(${colCount}, ${CELL_WIDTH}px)`,
-            gridTemplateRows: `40px repeat(${displayedStaff.length}, 40px)`,
+            gridTemplateColumns: `140px repeat(${colCount}, ${CELL_WIDTH}px)`,
+            gridTemplateRows: `36px repeat(${displayedStaff.length}, 36px)`,
             width: "max-content",
             minWidth: "100%",
           }}

@@ -32,12 +32,14 @@ export interface NewEventData {
   startTime: string;
   endTime: string;
   staffName: string;
+  staffNames?: string[];
   staffName2?: string;
   jobType: string;
   notes: string;
   location?: string;
   clientName?: string;
   priority?: string;
+  projectStatus?: string;
   color: { bg: string; border: string };
   isSplitCoverage?: boolean;
 }
@@ -136,22 +138,29 @@ const attendeeOptions = [
   "Devon Caldwell",
 ];
 
+const projectStatusOptions = [
+  { value: "not_started", label: "Not Started",  color: "#9ca3af", bg: "#f3f4f6" },
+  { value: "in_progress", label: "In Progress",  color: "#3b82f6", bg: "#dbeafe" },
+  { value: "on_hold",     label: "On Hold",      color: "#f59e0b", bg: "#fef3c7" },
+  { value: "completed",   label: "Completed",    color: "#22c55e", bg: "#dcfce7" },
+  { value: "cancelled",   label: "Cancelled",    color: "#ef4444", bg: "#fee2e2" },
+];
+
 const defaultForm = (prefilledSlot?: PrefilledSlot | null) => ({
   title: "",
   reference: generateRef(),
   date: prefilledSlot?.date || "2026-05-27",
   startTime: prefilledSlot?.timeLabel || "10:00 AM",
   endTime: "11:00 AM",
-  staffName: prefilledSlot?.staffName || "",
-  staffName2: "",
+  staffNames: prefilledSlot?.staffName ? [prefilledSlot.staffName] : [] as string[],
   jobType: "plumbing",
   notes: "",
   location: "",
   clientName: "",
   priority: "medium",
+  projectStatus: "not_started",
   timezone: "UTC -06:00 Central",
   repeat: "Never",
-  requiredAttendee: "Stephany Chandler Jr.",
   optionalAttendee: "",
 });
 
@@ -166,7 +175,6 @@ export const NewEventModal = ({
 }: NewEventModalProps) => {
   const isEditMode = !!editEventData;
   const [form, setForm] = useState(defaultForm(prefilledSlot));
-  const [isSplitCoverage, setIsSplitCoverage] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [colorOverride, setColorOverride] = useState<{ bg: string; border: string } | null>(null);
 
@@ -174,23 +182,24 @@ export const NewEventModal = ({
   useEffect(() => {
     if (open) {
       if (editEventData) {
-        // Edit mode: pre-fill everything from the existing event
+        const preNames = editEventData.staffNames && editEventData.staffNames.length > 0
+          ? editEventData.staffNames
+          : editEventData.staffName ? [editEventData.staffName] : [];
         setForm({
           title: editEventData.title || editEventData.reference || "",
           reference: editEventData.reference || generateRef(),
           date: editEventData.date || "2026-05-27",
           startTime: editEventData.startTime || "10:00 AM",
           endTime: editEventData.endTime || "11:00 AM",
-          staffName: editEventData.staffName || "",
-          staffName2: editEventData.staffName2 || "",
+          staffNames: preNames,
           jobType: editEventData.jobType || "plumbing",
           notes: editEventData.notes || "",
           location: editEventData.location || "",
           clientName: editEventData.clientName || "",
           priority: editEventData.priority || "medium",
+          projectStatus: editEventData.projectStatus || "not_started",
           timezone: "UTC -06:00 Central",
           repeat: "Never",
-          requiredAttendee: "Stephany Chandler Jr.",
           optionalAttendee: "",
         });
         setColorOverride(editEventData.color || null);
@@ -198,7 +207,6 @@ export const NewEventModal = ({
         setForm(defaultForm(prefilledSlot));
         setColorOverride(null);
       }
-      setIsSplitCoverage(false);
       setErrors({});
     }
   }, [open, editEventData?.id, prefilledSlot?.staffName, prefilledSlot?.timeLabel]);
@@ -221,14 +229,21 @@ export const NewEventModal = ({
   const availableStaff   = staffMembers.filter((s) => staffStatuses[s] === "available");
   const unavailableStaff = staffMembers.filter((s) => staffStatuses[s] === "unavailable");
 
-  const selectedStatus = form.staffName ? staffStatuses[form.staffName] : null;
-  const selectedStatusConfig = selectedStatus ? getStatusConfig(selectedStatus) : null;
+  // Multi-staff helpers
+  const addStaff = (name: string) => {
+    if (!form.staffNames.includes(name)) {
+      setForm((p) => ({ ...p, staffNames: [...p.staffNames, name] }));
+      setErrors((p) => ({ ...p, staffNames: "" }));
+    }
+  };
+  const removeStaff = (name: string) => {
+    setForm((p) => ({ ...p, staffNames: p.staffNames.filter((s) => s !== name) }));
+  };
 
   const validate = () => {
     const errs: Record<string, string> = {};
     if (!form.title.trim()) errs.title = "Job title is required";
-    if (!form.staffName)    errs.staffName = "Staff member is required";
-    if (isSplitCoverage && !form.staffName2) errs.staffName2 = "Second staff member is required";
+    if (form.staffNames.length === 0) errs.staffNames = "At least one staff member is required";
     if (!form.startTime)    errs.startTime = "Start time is required";
     if (!form.endTime)      errs.endTime = "End time is required";
     setErrors(errs);
@@ -237,9 +252,10 @@ export const NewEventModal = ({
 
   const handleSave = () => {
     if (!validate()) return;
-    // In edit mode, skip conflict check (user is intentionally editing)
+    const primaryStaff = form.staffNames[0] || "";
+    // In edit mode, skip conflict check
     const conflictMsg = isEditMode ? null : existingEvents.find(
-      (e) => e.staffName === form.staffName && e.startTime === form.startTime
+      (e) => e.staffName === primaryStaff && e.startTime === form.startTime
     );
     const eventData: NewEventData = {
       id: isEditMode ? (editEventData!.id) : `evt-${Date.now()}`,
@@ -248,18 +264,18 @@ export const NewEventModal = ({
       date: form.date,
       startTime: form.startTime,
       endTime: form.endTime,
-      staffName: form.staffName,
-      staffName2: isSplitCoverage ? form.staffName2 : undefined,
+      staffName: primaryStaff,
+      staffNames: form.staffNames,
       jobType: form.jobType,
       notes: form.notes,
       location: form.location,
       clientName: form.clientName,
       priority: form.priority,
+      projectStatus: form.projectStatus,
       color: effectiveColor,
-      isSplitCoverage,
     };
     if (conflictMsg) {
-      onConflict(eventData, `${form.staffName} already has an event at ${form.startTime}`);
+      onConflict(eventData, `${primaryStaff} already has an event at ${form.startTime}`);
     } else {
       onSave(eventData);
       onClose();
@@ -308,8 +324,7 @@ export const NewEventModal = ({
 
           {/* Job Title */}
           <div className="space-y-1.5">
-            <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif] flex items-center gap-1.5">
-              <Briefcase className="w-3.5 h-3.5 text-[#6b7280]" />
+            <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif]">
               Job Title <span className="text-red-500">*</span>
             </Label>
             <Input
@@ -324,8 +339,7 @@ export const NewEventModal = ({
 
           {/* Reference */}
           <div className="space-y-1.5">
-            <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif] flex items-center gap-1.5">
-              <FileText className="w-3.5 h-3.5 text-[#6b7280]" />
+            <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif]">
               Reference Number
             </Label>
             <Input
@@ -338,8 +352,7 @@ export const NewEventModal = ({
 
           {/* Client Name */}
           <div className="space-y-1.5">
-            <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif] flex items-center gap-1.5">
-              <Contact className="w-3.5 h-3.5 text-[#6b7280]" />
+            <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif]">
               Client Name
             </Label>
             <Input
@@ -353,8 +366,7 @@ export const NewEventModal = ({
 
           {/* Location */}
           <div className="space-y-1.5">
-            <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif] flex items-center gap-1.5">
-              <MapPin className="w-3.5 h-3.5 text-[#6b7280]" />
+            <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif]">
               Location / Address
             </Label>
             <Input
@@ -468,27 +480,113 @@ export const NewEventModal = ({
             </div>
           </div>
 
-          {/* Required Attendee */}
-          <div className="space-y-1.5">
+          {/* ── Staff Assignment ── */}
+          <div className="space-y-2">
             <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif]">
-              Required
+              Assign Staff <span className="text-red-500">*</span>
             </Label>
-            <Select value={form.requiredAttendee} onValueChange={(v) => f("requiredAttendee", v)}>
-              <SelectTrigger className="h-10 text-sm font-['Inter',sans-serif] border-[#dedede]" data-testid="new-event-required-attendee">
-                <SelectValue placeholder="Select required attendee…" />
+
+            {/* Live availability count */}
+            <div className="flex items-center gap-3 text-xs font-['Inter',sans-serif]">
+              <span className="flex items-center gap-1.5 text-[#15803d]">
+                <span className="w-2 h-2 rounded-full bg-[#22c55e] inline-block" />
+                {availableStaff.length} available at {form.startTime}
+              </span>
+              {unavailableStaff.length > 0 && (
+                <span className="flex items-center gap-1.5 text-[#dc2626]">
+                  <span className="w-2 h-2 rounded-full bg-[#ef4444] inline-block" />
+                  {unavailableStaff.length} busy
+                </span>
+              )}
+            </div>
+
+            {/* Selected staff tags */}
+            {form.staffNames.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {form.staffNames.map((name) => {
+                  const st = staffStatuses[name];
+                  return (
+                    <div
+                      key={name}
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border ${
+                        st === "available"
+                          ? "bg-[#f0fdf4] text-[#15803d] border-[#bbf7d0]"
+                          : "bg-[#fff1f1] text-[#dc2626] border-[#fecaca]"
+                      }`}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${st === "available" ? "bg-[#22c55e]" : "bg-[#ef4444]"}`} />
+                      {name}
+                      <button
+                        onClick={() => removeStaff(name)}
+                        className="ml-0.5 opacity-60 hover:opacity-100"
+                        data-testid={`remove-staff-${name}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Add staff dropdown */}
+            <Select
+              value=""
+              onValueChange={(v) => addStaff(v)}
+            >
+              <SelectTrigger
+                className={`h-10 text-sm font-['Inter',sans-serif] ${errors.staffNames ? "border-red-400" : "border-[#dedede]"}`}
+                data-testid="new-event-staff-select"
+              >
+                <SelectValue placeholder={form.staffNames.length === 0 ? "Select staff member…" : "Add another staff member…"} />
               </SelectTrigger>
-              <SelectContent>
-                {attendeeOptions.map((a) => (
-                  <SelectItem key={a} value={a} className="text-sm">{a}</SelectItem>
-                ))}
+              <SelectContent className="max-h-[280px]">
+                {availableStaff.filter((s) => !form.staffNames.includes(s)).length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel className="text-xs font-bold text-[#15803d] flex items-center gap-1.5 py-1.5">
+                      <span className="w-2 h-2 rounded-full bg-[#22c55e] inline-block" />
+                      Available ({availableStaff.filter((s) => !form.staffNames.includes(s)).length})
+                    </SelectLabel>
+                    {availableStaff.filter((s) => !form.staffNames.includes(s)).map((s) => (
+                      <SelectItem key={s} value={s} className="cursor-pointer">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-[#22c55e] flex-shrink-0" />
+                          <span className="font-medium text-[#0e1828]">{s}</span>
+                          <CheckCircle2 className="w-3 h-3 text-[#22c55e] ml-auto" />
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+                {unavailableStaff.filter((s) => !form.staffNames.includes(s)).length > 0 && (
+                  <>
+                    <Separator className="my-1" />
+                    <SelectGroup>
+                      <SelectLabel className="text-xs font-bold text-[#dc2626] flex items-center gap-1.5 py-1.5">
+                        <span className="w-2 h-2 rounded-full bg-[#ef4444] inline-block" />
+                        Busy ({unavailableStaff.filter((s) => !form.staffNames.includes(s)).length})
+                      </SelectLabel>
+                      {unavailableStaff.filter((s) => !form.staffNames.includes(s)).map((s) => (
+                        <SelectItem key={s} value={s} className="cursor-pointer opacity-60">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-[#ef4444] flex-shrink-0" />
+                            <span className="font-medium text-[#6b7280] line-through">{s}</span>
+                            <XCircle className="w-3 h-3 text-[#ef4444] ml-auto" />
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </>
+                )}
               </SelectContent>
             </Select>
+            {errors.staffNames && <p className="text-xs text-red-500">{errors.staffNames}</p>}
           </div>
 
           {/* Optional Attendee */}
           <div className="space-y-1.5">
             <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif]">
-              Optional
+              Optional Attendee
             </Label>
             <Select value={form.optionalAttendee} onValueChange={(v) => f("optionalAttendee", v)}>
               <SelectTrigger className="h-10 text-sm font-['Inter',sans-serif] border-[#dedede]" data-testid="new-event-optional-attendee">
@@ -503,149 +601,35 @@ export const NewEventModal = ({
             </Select>
           </div>
 
-          {/* ── Staff Assignment ── */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif] flex items-center gap-1.5">
-                <User className="w-3.5 h-3.5 text-[#6b7280]" />
-                Assign Staff <span className="text-red-500">*</span>
-              </Label>
-              <button
-                onClick={() => {
-                  setIsSplitCoverage(!isSplitCoverage);
-                  if (isSplitCoverage) setForm((p) => ({ ...p, staffName2: "" }));
-                }}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-semibold transition-all ${
-                  isSplitCoverage
-                    ? "border-[#f97316] bg-[#fff7ed] text-[#c2410c]"
-                    : "border-[#e8e8e8] bg-white text-[#6b7280] hover:border-[#f97316] hover:text-[#f97316]"
-                }`}
-                data-testid="split-coverage-toggle"
-              >
-                <Users className="w-3 h-3" />
-                Split Coverage
-              </button>
-            </div>
-
-            {/* Live availability count — updates when startTime changes */}
-            <div className="flex items-center gap-3 text-xs font-['Inter',sans-serif] py-0.5">
-              <span className="flex items-center gap-1.5 text-[#15803d]">
-                <span className="w-2 h-2 rounded-full bg-[#22c55e] inline-block" />
-                {availableStaff.length} available at {form.startTime}
-              </span>
-              {unavailableStaff.length > 0 && (
-                <span className="flex items-center gap-1.5 text-[#dc2626]">
-                  <span className="w-2 h-2 rounded-full bg-[#ef4444] inline-block" />
-                  {unavailableStaff.length} busy
-                </span>
-              )}
-            </div>
-
-            {/* Primary staff select */}
-            <Select value={form.staffName} onValueChange={(v) => f("staffName", v)}>
-              <SelectTrigger
-                className={`h-11 text-sm font-['Inter',sans-serif] ${errors.staffName ? "border-red-400" : "border-[#dedede]"}`}
-                data-testid="new-event-staff-select"
-              >
-                {form.staffName && selectedStatusConfig ? (
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${selectedStatusConfig.dot}`} />
-                    <span className="font-medium text-[#0e1828] truncate">{form.staffName}</span>
-                    <span className={`ml-auto text-xs px-1.5 py-0.5 rounded font-semibold flex-shrink-0 ${selectedStatusConfig.badge}`}>
-                      {selectedStatusConfig.label}
-                    </span>
-                  </div>
-                ) : (
-                  <SelectValue placeholder="Select staff member…" />
-                )}
-              </SelectTrigger>
-              <SelectContent className="max-h-[280px]">
-                {availableStaff.length > 0 && (
-                  <SelectGroup>
-                    <SelectLabel className="text-xs font-bold text-[#15803d] flex items-center gap-1.5 py-1.5">
-                      <span className="w-2 h-2 rounded-full bg-[#22c55e] inline-block" />
-                      Available at {form.startTime} ({availableStaff.length})
-                    </SelectLabel>
-                    {availableStaff.map((s) => (
-                      <SelectItem key={s} value={s} className="cursor-pointer">
-                        <div className="flex items-center gap-2 w-full">
-                          <span className="w-2 h-2 rounded-full bg-[#22c55e] flex-shrink-0" />
-                          <span className="font-medium text-[#0e1828]">{s}</span>
-                          <CheckCircle2 className="w-3 h-3 text-[#22c55e] ml-auto" />
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                )}
-                {unavailableStaff.length > 0 && (
-                  <>
-                    <Separator className="my-1" />
-                    <SelectGroup>
-                      <SelectLabel className="text-xs font-bold text-[#dc2626] flex items-center gap-1.5 py-1.5">
-                        <span className="w-2 h-2 rounded-full bg-[#ef4444] inline-block" />
-                        Busy at {form.startTime} ({unavailableStaff.length})
-                      </SelectLabel>
-                      {unavailableStaff.map((s) => (
-                        <SelectItem key={s} value={s} className="cursor-pointer opacity-60">
-                          <div className="flex items-center gap-2 w-full">
-                            <span className="w-2 h-2 rounded-full bg-[#ef4444] flex-shrink-0" />
-                            <span className="font-medium text-[#6b7280] line-through">{s}</span>
-                            <XCircle className="w-3 h-3 text-[#ef4444] ml-auto" />
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </>
-                )}
-              </SelectContent>
-            </Select>
-            {errors.staffName && <p className="text-xs text-red-500">{errors.staffName}</p>}
-
-            {/* Split Coverage second staff */}
-            {isSplitCoverage && (
-              <div className="mt-2 space-y-1.5">
-                <div className="flex items-center gap-2 p-2 bg-[#fff7ed] rounded-md border border-[#fed7aa]">
-                  <Users className="w-3.5 h-3.5 text-[#f97316] flex-shrink-0" />
-                  <span className="text-xs font-semibold text-[#c2410c] font-['Inter',sans-serif]">
-                    Second staff member (split coverage)
-                  </span>
-                </div>
-                <Select value={form.staffName2} onValueChange={(v) => f("staffName2", v)}>
-                  <SelectTrigger
-                    className={`h-11 text-sm font-['Inter',sans-serif] border-[#fed7aa] ${errors.staffName2 ? "border-red-400" : ""}`}
-                    data-testid="new-event-staff2-select"
+          {/* Project Status */}
+          <div className="space-y-1.5">
+            <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif]">
+              Project Status
+            </Label>
+            <div className="flex flex-wrap gap-2">
+              {projectStatusOptions.map((ps) => {
+                const isSelected = form.projectStatus === ps.value;
+                return (
+                  <button
+                    key={ps.value}
+                    onClick={() => f("projectStatus", ps.value)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border-2 transition-all ${
+                      isSelected
+                        ? "border-current"
+                        : "border-[#e8e8e8] text-[#6b7280] bg-white hover:border-[#d1d5db]"
+                    }`}
+                    style={isSelected ? { backgroundColor: ps.bg, color: ps.color, borderColor: ps.color } : {}}
+                    data-testid={`project-status-${ps.value}`}
                   >
-                    {form.staffName2 ? (
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${staffStatuses[form.staffName2] === "available" ? "bg-[#22c55e]" : "bg-[#ef4444]"}`} />
-                        <span className="font-medium text-[#0e1828] truncate">{form.staffName2}</span>
-                      </div>
-                    ) : (
-                      <SelectValue placeholder="Select second staff…" />
-                    )}
-                  </SelectTrigger>
-                  <SelectContent className="max-h-[240px]">
-                    {availableStaff.filter((s) => s !== form.staffName).map((s) => (
-                      <SelectItem key={s} value={s}>
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-[#22c55e] flex-shrink-0" />
-                          <span>{s}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                    {unavailableStaff.filter((s) => s !== form.staffName).map((s) => (
-                      <SelectItem key={s} value={s} className="opacity-60">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-[#ef4444] flex-shrink-0" />
-                          <span className="line-through text-[#6b7280]">{s}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {errors.staffName2 && <p className="text-xs text-red-500">{errors.staffName2}</p>}
-              </div>
-            )}
+                    <span
+                      className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: ps.color }}
+                    />
+                    {ps.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Job Type */}
@@ -673,8 +657,7 @@ export const NewEventModal = ({
 
           {/* Priority */}
           <div className="space-y-1.5">
-            <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif] flex items-center gap-1.5">
-              <Star className="w-3.5 h-3.5 text-[#6b7280]" />
+            <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif]">
               Priority
             </Label>
             <div className="flex gap-2">
@@ -737,7 +720,7 @@ export const NewEventModal = ({
               data-testid="event-preview-badge"
             >
               {form.title || "Job Title"}
-              {isSplitCoverage && <span className="ml-1.5 text-[#f97316]">· Split ×2</span>}
+              {form.staffNames.length > 1 && <span className="ml-1.5 text-[#0065f4]">· {form.staffNames.length} staff</span>}
             </div>
           </div>
 
@@ -771,7 +754,7 @@ export const NewEventModal = ({
             className="flex-1 h-10 bg-[#0065f4] hover:bg-[#0052c2] text-white font-['Inter',sans-serif] text-sm font-medium"
             data-testid="save-new-event"
           >
-            {isEditMode ? "Save Changes" : isSplitCoverage ? "Create (Split Coverage)" : "Create Event"}
+            {isEditMode ? "Save Changes" : form.staffNames.length > 1 ? `Create Event (${form.staffNames.length} Staff)` : "Create Event"}
           </Button>
         </div>
       </DialogContent>

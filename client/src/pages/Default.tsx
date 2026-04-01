@@ -173,8 +173,8 @@ export const Default = (): JSX.Element => {
   };
 
   // Click on a chip (existing job) — open Job Detail first
-  const handleChipClick = (staffName: string, timeLabel: string, chip: CellChip) => {
-    setJobDetailPayload({ chip, staffName, timeLabel, isConflict: false });
+  const handleChipClick = (staffName: string, timeLabel: string, chip: CellChip, chipIndex: number) => {
+    setJobDetailPayload({ chip, staffName, timeLabel, chipIndex, isConflict: false });
     setShowJobDetailModal(true);
   };
 
@@ -266,33 +266,23 @@ export const Default = (): JSX.Element => {
       setEditEventData(null);
       showSuccess(`Event updated for ${event.staffName} at ${event.startTime}`);
     } else {
-      // Create new event
-      const newChip: CustomEventData = {
-        id: event.id,
-        staffName: event.staffName,
-        startTime: event.startTime,
-        title: event.title || event.reference,
-        color: event.color,
-        status: "new",
-      };
-      setCustomEvents((prev) => [...prev, newChip]);
+      // Create new event — one chip per assigned staff member
+      const allStaff = event.staffNames && event.staffNames.length > 0
+        ? event.staffNames
+        : [event.staffName].filter(Boolean);
 
-      if (event.isSplitCoverage && event.staffName2) {
-        setCustomEvents((prev) => [
-          ...prev,
-          {
-            id: `${event.id}-2`,
-            staffName: event.staffName2!,
-            startTime: event.startTime,
-            title: `${event.title || event.reference} (Split)`,
-            color: { bg: "#fff7ed", border: "#f97316" },
-            status: "new" as const,
-          },
-        ]);
-      }
-      const who = event.isSplitCoverage
-        ? `${event.staffName} + ${event.staffName2}`
-        : event.staffName;
+      const newChips: CustomEventData[] = allStaff.map((sn, i) => ({
+        id: i === 0 ? event.id : `${event.id}-${i + 1}`,
+        staffName: sn,
+        startTime: event.startTime,
+        title: event.title || event.reference || "",
+        color: event.color,
+        status: "new" as const,
+        projectStatus: event.projectStatus,
+      }));
+      setCustomEvents((prev) => [...prev, ...newChips]);
+
+      const who = allStaff.length > 1 ? `${allStaff[0]} +${allStaff.length - 1} more` : allStaff[0];
       showSuccess(`"${event.title || event.reference}" scheduled for ${who} at ${event.startTime}`);
     }
 
@@ -365,12 +355,38 @@ export const Default = (): JSX.Element => {
     showSuccess(`"${drag.chip.label}" rescheduled → ${targetStaff} at ${targetTime}`);
   };
 
-  // ─── Job Detail → "Add Event" ─────────────────────────────────────────
-  const handleJobDetailScheduleAnother = () => {
-    if (jobDetailPayload) {
-      setPrefilledSlot({ staffName: jobDetailPayload.staffName, timeLabel: jobDetailPayload.timeLabel });
+  // ─── Job Detail → Delete ────────────────────────────────────────────────
+  const handleJobDetailDelete = () => {
+    if (!jobDetailPayload) return;
+    const { chip, staffName, timeLabel, chipIndex } = jobDetailPayload;
+    if (chip.customEventId) {
+      setCustomEvents((prev) => prev.filter((e) => e.id !== chip.customEventId));
+    } else {
+      const key = `${staffName}||${timeLabel}||${chipIndex}`;
+      setRemovedBaseChips((prev) => new Set([...prev, key]));
     }
-    setShowNewEventModal(true);
+    setShowJobDetailModal(false);
+    showSuccess(`"${chip.label}" deleted`);
+  };
+
+  // ─── Job Detail → Duplicate ─────────────────────────────────────────────
+  const handleJobDetailDuplicate = () => {
+    if (!jobDetailPayload) return;
+    const { chip, staffName, timeLabel } = jobDetailPayload;
+    const newId = `dup-${Date.now()}`;
+    setCustomEvents((prev) => [
+      ...prev,
+      {
+        id: newId,
+        staffName,
+        startTime: timeLabel,
+        title: `${chip.label} (Copy)`,
+        color: { bg: chip.bg, border: chip.border },
+        status: "new" as const,
+      },
+    ]);
+    setShowJobDetailModal(false);
+    showSuccess(`"${chip.label}" duplicated`);
   };
 
   return (
@@ -378,7 +394,7 @@ export const Default = (): JSX.Element => {
       {/* ── Sidebar ── */}
       <aside className="w-[78px] min-h-screen flex flex-col items-center bg-white border-r border-[#e8e8e8] flex-shrink-0">
         {/* Logo */}
-        <div className="flex items-center justify-center w-full h-[85px]">
+        <div className="flex items-center justify-center w-full h-14">
           <img src={albiLogo} alt="Albi" className="w-10 h-10 object-contain" />
         </div>
 
@@ -418,7 +434,7 @@ export const Default = (): JSX.Element => {
       {/* ── Main content ── */}
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
         {/* Top bar */}
-        <div className="flex-shrink-0 bg-white border-b border-[#e8e8e8] px-6 h-[85px] flex items-center">
+        <div className="flex-shrink-0 bg-white border-b border-[#e8e8e8] px-6 h-14 flex items-center">
           <FrameSubsection />
         </div>
 
@@ -557,7 +573,8 @@ export const Default = (): JSX.Element => {
         open={showJobDetailModal}
         onClose={() => setShowJobDetailModal(false)}
         payload={jobDetailPayload}
-        onScheduleAnother={handleJobDetailScheduleAnother}
+        onDelete={handleJobDetailDelete}
+        onDuplicate={handleJobDetailDuplicate}
         onEditEvent={handleEditChipOpen}
       />
 

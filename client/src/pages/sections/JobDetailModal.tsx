@@ -1,7 +1,7 @@
 import React from "react";
 import {
   X, User, Clock, MapPin, Briefcase, Hash, Calendar,
-  AlertTriangle, CheckCircle2, Edit2, CalendarPlus
+  AlertTriangle, CheckCircle2, Edit2, Trash2, Copy
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,12 +13,14 @@ export interface ChipData {
   bg: string;
   border: string;
   label: string;
+  customEventId?: string;
 }
 
 export interface JobDetailPayload {
   chip: ChipData;
   staffName: string;
   timeLabel: string;
+  chipIndex: number;
   isConflict?: boolean;
 }
 
@@ -27,7 +29,8 @@ interface JobDetailModalProps {
   onClose: () => void;
   payload: JobDetailPayload | null;
   onEditEvent?: () => void;
-  onScheduleAnother?: () => void;
+  onDelete?: () => void;
+  onDuplicate?: () => void;
 }
 
 function inferJobType(chip: ChipData): string {
@@ -70,7 +73,8 @@ export const JobDetailModal = ({
   onClose,
   payload,
   onEditEvent,
-  onScheduleAnother,
+  onDelete,
+  onDuplicate,
 }: JobDetailModalProps) => {
   if (!payload) return null;
 
@@ -199,29 +203,33 @@ export const JobDetailModal = ({
 
         {/* Footer actions */}
         <div className="px-5 py-3 border-t border-[#e8e8e8] bg-[#fafafa] flex gap-2">
-          <Button
-            variant="outline"
-            onClick={onClose}
-            className="flex-1 h-9 text-sm border-[#dedede] text-[#344153] font-['Inter',sans-serif]"
-            data-testid="job-detail-close"
-          >
-            Close
-          </Button>
-          {onScheduleAnother && (
+          {onDelete && (
             <Button
               variant="outline"
-              onClick={() => { onClose(); onScheduleAnother(); }}
-              className="flex-1 h-9 text-sm border-[#0065f4] text-[#0065f4] hover:bg-[#e5effd] font-['Inter',sans-serif]"
-              data-testid="job-detail-schedule-another"
+              onClick={onDelete}
+              className="h-9 px-3 text-sm border-[#fecaca] text-[#dc2626] hover:bg-[#fee2e2] font-['Inter',sans-serif] flex-shrink-0"
+              data-testid="job-detail-delete"
             >
-              <CalendarPlus className="w-3.5 h-3.5 mr-1.5" />
-              Add Event
+              <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+              Delete
             </Button>
           )}
+          {onDuplicate && (
+            <Button
+              variant="outline"
+              onClick={onDuplicate}
+              className="h-9 px-3 text-sm border-[#dedede] text-[#344153] hover:bg-[#f3f4f6] font-['Inter',sans-serif] flex-shrink-0"
+              data-testid="job-detail-duplicate"
+            >
+              <Copy className="w-3.5 h-3.5 mr-1.5" />
+              Duplicate
+            </Button>
+          )}
+          <div className="flex-1" />
           {onEditEvent && (
             <Button
               onClick={() => { onClose(); onEditEvent(); }}
-              className="flex-1 h-9 text-sm bg-[#0065f4] hover:bg-[#0052c2] text-white font-['Inter',sans-serif]"
+              className="h-9 px-4 text-sm bg-[#0065f4] hover:bg-[#0052c2] text-white font-['Inter',sans-serif]"
               data-testid="job-detail-edit"
             >
               <Edit2 className="w-3.5 h-3.5 mr-1.5" />

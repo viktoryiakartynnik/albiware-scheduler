@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
-import {
-  PlusIcon, CalendarDaysIcon, Users2Icon, ClipboardListIcon,
-  MapIcon, Settings2Icon, CheckCircle2, X, Search
-} from "lucide-react";
+import { PlusIcon, CheckCircle2, X, Search, Settings2 } from "lucide-react";
 import albiLogo from "@assets/albi_icon_sky_white_1775052250721.png";
+import schedulerIcon from "@assets/Scheduler_1775055102572.png";
+import dashboardIcon from "@assets/dashboard_1775055102572.png";
+import projectsIcon from "@assets/projects_1775055102572.png";
+import assetsIcon from "@assets/assets_1775055102572.png";
+import relationshipsIcon from "@assets/relationships_1775055102572.png";
 import { Button } from "@/components/ui/button";
 import { CalendarSubsection, CustomEventData, CellChip, DragChipData } from "./sections/CalendarSubsection";
 import { FrameSubsection } from "./sections/FrameSubsection";
@@ -15,10 +17,11 @@ import { ConflictResolutionDialog } from "./sections/ConflictResolutionDialog";
 import { JobDetailModal, JobDetailPayload } from "./sections/JobDetailModal";
 
 const mainNavItems = [
-  { icon: CalendarDaysIcon, label: "Scheduler", active: true },
-  { icon: Users2Icon,       label: "Customers" },
-  { icon: ClipboardListIcon,label: "Jobs" },
-  { icon: MapIcon,          label: "Map" },
+  { img: schedulerIcon,      label: "Scheduler",     active: true },
+  { img: dashboardIcon,      label: "Dashboard" },
+  { img: projectsIcon,       label: "Projects" },
+  { img: assetsIcon,         label: "Assets" },
+  { img: relationshipsIcon,  label: "Relationships" },
 ];
 
 // Base occupied slots — drives staff-availability checks
@@ -100,6 +103,9 @@ export const Default = (): JSX.Element => {
   // New event
   const [prefilledSlot, setPrefilledSlot] = useState<PrefilledSlot | null>(null);
 
+  // Edit event
+  const [editEventData, setEditEventData] = useState<NewEventData | null>(null);
+
   // Conflict
   const [conflictEvent,     setConflictEvent]     = useState<NewEventData | null>(null);
   const [conflictMessage,   setConflictMessage]   = useState("");
@@ -166,10 +172,36 @@ export const Default = (): JSX.Element => {
     setShowNewEventModal(true);
   };
 
-  // Click on a chip (existing job)
+  // Click on a chip (existing job) — open Job Detail first
   const handleChipClick = (staffName: string, timeLabel: string, chip: CellChip) => {
     setJobDetailPayload({ chip, staffName, timeLabel, isConflict: false });
     setShowJobDetailModal(true);
+  };
+
+  // Open chip in Edit Event modal (from Job Detail "Edit" button)
+  const handleEditChipOpen = () => {
+    const payload = jobDetailPayload;
+    if (!payload) return;
+    const { chip, staffName, timeLabel } = payload;
+    const typeMap: Record<string, string> = {
+      "#eca203": "plumbing", "#8238bb": "hvac",
+      "#0063ec": "electrical", "#007c54": "gas",
+    };
+    const evt: NewEventData = {
+      id: chip.customEventId || `base-${staffName}-${timeLabel}`,
+      title: chip.label,
+      reference: chip.label,
+      date: "2026-05-27",
+      startTime: timeLabel,
+      endTime: timeLabel,
+      staffName,
+      jobType: typeMap[chip.border] || "general",
+      notes: "",
+      color: { bg: chip.bg, border: chip.border },
+    };
+    setEditEventData(evt);
+    setShowJobDetailModal(false);
+    setShowNewEventModal(true);
   };
 
   // Click on conflict badge in a cell (view mode)
@@ -202,37 +234,71 @@ export const Default = (): JSX.Element => {
   };
 
   const handleSaveEvent = (event: NewEventData) => {
-    const newChip: CustomEventData = {
-      id: event.id,
-      staffName: event.staffName,
-      startTime: event.startTime,
-      title: event.title || event.reference,
-      color: event.color,
-      status: "new",
-    };
-    setCustomEvents((prev) => [...prev, newChip]);
+    const isEdit = !!editEventData;
 
-    if (event.isSplitCoverage && event.staffName2) {
-      setCustomEvents((prev) => [
-        ...prev,
-        {
-          id: `${event.id}-2`,
-          staffName: event.staffName2!,
-          startTime: event.startTime,
-          title: `${event.title || event.reference} (Split)`,
-          color: { bg: "#fff7ed", border: "#f97316" },
-          status: "new" as const,
-        },
-      ]);
+    if (isEdit) {
+      // Update existing custom event, or replace a base chip
+      const existingCustom = customEvents.find((e) => e.id === event.id);
+      if (existingCustom) {
+        setCustomEvents((prev) =>
+          prev.map((e) =>
+            e.id === event.id
+              ? { ...e, staffName: event.staffName, startTime: event.startTime,
+                  title: event.title || event.reference, color: event.color,
+                  status: "moved" as const }
+              : e
+          )
+        );
+      } else {
+        // Base chip — mark it removed and add updated custom event
+        const baseKey = event.id.replace(/^base-/, "");
+        const [staffPart, timePart] = baseKey.split("-").reduce<[string, string]>(
+          (acc, seg, i) => i === 0 ? [seg, ""] : [acc[0], acc[1] ? acc[1] + "-" + seg : seg],
+          ["", ""]
+        );
+        setRemovedBaseChips((prev) => new Set([...prev, `${staffPart}||${timePart}||0`]));
+        setCustomEvents((prev) => [...prev, {
+          id: `edit-${Date.now()}`, staffName: event.staffName,
+          startTime: event.startTime, title: event.title || event.reference,
+          color: event.color, status: "moved" as const,
+        }]);
+      }
+      setEditEventData(null);
+      showSuccess(`Event updated for ${event.staffName} at ${event.startTime}`);
+    } else {
+      // Create new event
+      const newChip: CustomEventData = {
+        id: event.id,
+        staffName: event.staffName,
+        startTime: event.startTime,
+        title: event.title || event.reference,
+        color: event.color,
+        status: "new",
+      };
+      setCustomEvents((prev) => [...prev, newChip]);
+
+      if (event.isSplitCoverage && event.staffName2) {
+        setCustomEvents((prev) => [
+          ...prev,
+          {
+            id: `${event.id}-2`,
+            staffName: event.staffName2!,
+            startTime: event.startTime,
+            title: `${event.title || event.reference} (Split)`,
+            color: { bg: "#fff7ed", border: "#f97316" },
+            status: "new" as const,
+          },
+        ]);
+      }
+      const who = event.isSplitCoverage
+        ? `${event.staffName} + ${event.staffName2}`
+        : event.staffName;
+      showSuccess(`"${event.title || event.reference}" scheduled for ${who} at ${event.startTime}`);
     }
 
     setAvailabilityMode(false);
     setSelectedSlot(null);
     setPrefilledSlot(null);
-    const who = event.isSplitCoverage
-      ? `${event.staffName} + ${event.staffName2}`
-      : event.staffName;
-    showSuccess(`"${event.title || event.reference}" scheduled for ${who} at ${event.startTime}`);
   };
 
   // ─── Conflict flow ────────────────────────────────────────────────────
@@ -252,10 +318,13 @@ export const Default = (): JSX.Element => {
   };
 
   const handleReassignStaff = () => {
-    setPrefilledSlot(
-      conflictEvent ? { staffName: "", timeLabel: conflictEvent.startTime } : null
-    );
-    setShowNewEventModal(true);
+    // Open the Edit Event modal pre-filled with the conflicting event's data
+    // so the user can change staff (not create a brand-new event)
+    if (conflictEvent) {
+      setEditEventData(conflictEvent);
+      setShowConflictDialog(false);
+      setShowNewEventModal(true);
+    }
   };
 
   const handleChangeTime = () => {
@@ -315,24 +384,23 @@ export const Default = (): JSX.Element => {
 
         {/* Main nav */}
         <nav className="flex flex-col items-center w-full flex-1 pt-1">
-          {mainNavItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <div key={item.label} className="w-full h-12 flex items-center justify-center">
-                <button
-                  className={`flex items-center justify-center rounded-[6px] transition-colors ${
-                    item.active
-                      ? "bg-[#f3f4f6] p-2 text-[#344153]"
-                      : "p-2 text-[#9ca3af] hover:text-[#344153] hover:bg-[#f9fafb]"
-                  }`}
-                  title={item.label}
-                  data-testid={`nav-${item.label.toLowerCase()}`}
-                >
-                  <Icon className="w-6 h-6" />
-                </button>
-              </div>
-            );
-          })}
+          {mainNavItems.map((item) => (
+            <div key={item.label} className="w-full h-12 flex items-center justify-center">
+              <button
+                className={`flex items-center justify-center rounded-[6px] transition-colors p-2 ${
+                  item.active ? "bg-[#f3f4f6]" : "hover:bg-[#f9fafb]"
+                }`}
+                title={item.label}
+                data-testid={`nav-${item.label.toLowerCase()}`}
+              >
+                <img
+                  src={item.img}
+                  alt={item.label}
+                  className={`w-6 h-6 object-contain ${item.active ? "opacity-100" : "opacity-50 hover:opacity-80"}`}
+                />
+              </button>
+            </div>
+          ))}
         </nav>
 
         {/* Bottom: Settings */}
@@ -342,7 +410,7 @@ export const Default = (): JSX.Element => {
             title="Settings"
             data-testid="nav-settings"
           >
-            <Settings2Icon className="w-6 h-6" />
+            <Settings2 className="w-6 h-6" />
           </button>
         </div>
       </aside>
@@ -460,10 +528,12 @@ export const Default = (): JSX.Element => {
         onClose={() => {
           setShowNewEventModal(false);
           setPrefilledSlot(null);
+          setEditEventData(null);
         }}
         onSave={handleSaveEvent}
         onConflict={handleConflict}
         prefilledSlot={prefilledSlot}
+        editEventData={editEventData}
         existingEvents={allOccupiedSlots.map((e) => ({
           staffName: e.staffName,
           startTime: e.startTime,
@@ -488,15 +558,7 @@ export const Default = (): JSX.Element => {
         onClose={() => setShowJobDetailModal(false)}
         payload={jobDetailPayload}
         onScheduleAnother={handleJobDetailScheduleAnother}
-        onEditEvent={() => {
-          if (jobDetailPayload) {
-            setPrefilledSlot({
-              staffName: jobDetailPayload.staffName,
-              timeLabel: jobDetailPayload.timeLabel,
-            });
-          }
-          setShowNewEventModal(true);
-        }}
+        onEditEvent={handleEditChipOpen}
       />
 
       {/* Success toast */}

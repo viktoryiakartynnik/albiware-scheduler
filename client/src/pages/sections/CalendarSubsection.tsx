@@ -49,9 +49,9 @@ interface CalendarContextType {
   onDragOverCell: (staffName: string, timeLabel: string) => void;
   onDragLeaveCell: () => void;
   onDropOnCell: (targetStaff: string, targetTime: string) => void;
-  // chip duration resize
+  // chip duration resize (absolute value)
   chipDurations: Record<string, number>;
-  onDurationChange: (chipKey: string, delta: number) => void;
+  onDurationChange: (chipKey: string, absoluteDuration: number) => void;
   continuationCells: Set<string>;
 }
 
@@ -261,11 +261,12 @@ interface RowCellProps {
   timeLabel: string;
   chips: CellChip[];
   isSuggestedRow?: boolean;
+  maxColumns: number;
 }
 
 const CELL_WIDTH = 283;
 
-const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow }: RowCellProps) => {
+const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow, maxColumns }: RowCellProps) => {
   const {
     availabilityMode,
     availableTimeColumns,
@@ -283,11 +284,9 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow }: RowCellProps) 
     onDropOnCell,
     chipDurations,
     onDurationChange,
-    continuationCells,
   } = useContext(CalendarContext);
 
   const [hoveredChipIdx, setHoveredChipIdx] = useState<number | null>(null);
-  const isContinuation = continuationCells.has(`${staffName}||${timeLabel}`);
 
   const isConflict = chips.length >= 2;
   const isEmpty    = chips.length === 0;
@@ -306,36 +305,14 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow }: RowCellProps) 
     bgClass = "bg-[#f8f9fa] opacity-50";
   else if (isConflict) bgClass = "bg-[#fff7ed]";
 
-  const canClickSlot = availabilityMode && isEmpty && isInRange && !isSelected && !isContinuation;
-
-  const chipWidth =
-    chips.length === 1
-      ? CELL_WIDTH - 2
-      : Math.floor((CELL_WIDTH - 4) / chips.length);
-
-  if (isContinuation && chips.length === 0) {
-    return (
-      <div
-        className="relative h-10 border-b border-r border-[#dcdfe3] flex items-center overflow-hidden"
-        style={{ width: CELL_WIDTH, backgroundColor: "#f5f3ff" }}
-        title="Continuation of previous job"
-        data-testid={`cell-continuation-${staffName}-${timeLabel}`}
-      >
-        <div className="absolute inset-0 flex items-center pl-2">
-          <div className="h-[28px] w-full rounded bg-[#ede9fe] border border-[#c4b5fd] border-dashed flex items-center px-2">
-            <span className="text-[10px] text-[#7c3aed] font-medium truncate">← continued</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const canClickSlot = availabilityMode && isEmpty && isInRange && !isSelected;
 
   return (
     <div
       className={`relative h-10 border-b border-r border-[#dcdfe3] overflow-visible flex items-center transition-colors ${bgClass} ${
         canClickSlot ? "group" : ""
       }`}
-      style={{ width: CELL_WIDTH }}
+      style={{ width: "100%" }}
       onClick={canClickSlot ? () => onSlotClick(staffName, timeLabel) : undefined}
       onDoubleClick={() => onDoubleClickSlot(staffName, timeLabel)}
       onDragOver={(e) => {
@@ -354,24 +331,26 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow }: RowCellProps) 
       {chips.length > 0 && (
         <div
           className="flex items-center h-[37px] gap-px relative top-px pl-px"
-          style={{ width: CELL_WIDTH - 2, overflow: "visible" }}
+          style={{ width: "100%", overflow: "visible" }}
         >
           {chips.map((chip, i) => {
             const chipKey = `${staffName}||${timeLabel}||${i}`;
             const isDragSource = dragSourceKey === chipKey;
             const statusBadge = chip.status ? STATUS_BADGE[chip.status] : null;
+            const dur = chipDurations[chipKey] || 1;
+            const isSingleChip = chips.length === 1;
 
             return (
               <div
                 key={i}
-                className="relative flex-shrink-0 h-[37px] group/chip"
-                style={{ width: chipWidth }}
+                className="relative h-[37px] group/chip min-w-0"
+                style={{ flex: 1 }}
               >
-                {/* Chip */}
+                {/* Chip body */}
                 <div
-                  className={`flex flex-col items-start justify-center pl-2 pr-1 pt-0.5 pb-1 overflow-hidden border-l-4 border-solid h-[37px] rounded cursor-grab transition-all duration-100 w-full select-none ${
+                  className={`flex flex-col items-start justify-center pl-2 pt-0.5 pb-1 overflow-hidden border-l-4 border-solid h-[37px] rounded cursor-grab transition-all duration-100 w-full select-none ${
                     isDragSource ? "opacity-30" : ""
-                  }`}
+                  } ${isSingleChip ? "pr-4" : "pr-1"}`}
                   style={{
                     backgroundColor: hoveredChipIdx === i ? lightenColor(chip.bg) : chip.bg,
                     borderLeftColor: chip.border,
@@ -397,45 +376,51 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow }: RowCellProps) 
                     <span className="text-[10px] font-bold text-[#252627] truncate flex-1 leading-tight pointer-events-none">
                       {chip.label}
                     </span>
-                    {(() => {
-                      const chipKey = `${staffName}||${timeLabel}||${i}`;
-                      const dur = chipDurations[chipKey] || 1;
-                      return dur > 1 ? (
-                        <span className="text-[8px] font-black bg-[#7c3aed] text-white px-1 rounded leading-none flex-shrink-0 pointer-events-none">
-                          {dur}h
-                        </span>
-                      ) : null;
-                    })()}
+                    {dur > 1 && (
+                      <span className="text-[8px] font-black bg-[#7c3aed] text-white px-1 rounded leading-none flex-shrink-0 pointer-events-none">
+                        {dur}h
+                      </span>
+                    )}
                     {statusBadge && (
                       <span className={`text-[7px] font-black px-0.5 rounded leading-none flex-shrink-0 pointer-events-none ${statusBadge.cls}`}>
                         {statusBadge.label}
                       </span>
                     )}
                   </div>
-                  {/* Duration ± buttons (visible on chip hover) */}
-                  {hoveredChipIdx === i && (
-                    <div className="flex items-center gap-0.5 mt-0.5 pointer-events-auto">
-                      {(() => {
-                        const chipKey = `${staffName}||${timeLabel}||${i}`;
-                        const dur = chipDurations[chipKey] || 1;
-                        return (
-                          <>
-                            <button
-                              className="w-4 h-4 rounded bg-white/80 border border-[#d1d5db] text-[9px] font-black text-[#374151] hover:bg-[#f3f4f6] flex items-center justify-center leading-none"
-                              onClick={(e) => { e.stopPropagation(); if (dur > 1) onDurationChange(chipKey, -1); }}
-                              title="Decrease duration"
-                            >−</button>
-                            <button
-                              className="w-4 h-4 rounded bg-white/80 border border-[#d1d5db] text-[9px] font-black text-[#374151] hover:bg-[#f3f4f6] flex items-center justify-center leading-none"
-                              onClick={(e) => { e.stopPropagation(); onDurationChange(chipKey, +1); }}
-                              title="Increase duration"
-                            >+</button>
-                          </>
-                        );
-                      })()}
-                    </div>
-                  )}
                 </div>
+
+                {/* Drag-to-resize handle — right edge of single chips only */}
+                {isSingleChip && (
+                  <div
+                    className="absolute right-0 top-0 bottom-0 w-3 z-20 flex items-center justify-center cursor-ew-resize"
+                    title="Drag to change duration"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const startX = e.clientX;
+                      const startDuration = chipDurations[chipKey] || 1;
+                      let lastDur = startDuration;
+
+                      const onMouseMove = (me: MouseEvent) => {
+                        const deltaX = me.clientX - startX;
+                        const durDelta = Math.round(deltaX / CELL_WIDTH);
+                        const newDur = Math.max(1, Math.min(startDuration + durDelta, maxColumns));
+                        if (newDur !== lastDur) {
+                          lastDur = newDur;
+                          onDurationChange(chipKey, newDur);
+                        }
+                      };
+                      const onMouseUp = () => {
+                        window.removeEventListener("mousemove", onMouseMove);
+                        window.removeEventListener("mouseup", onMouseUp);
+                      };
+                      window.addEventListener("mousemove", onMouseMove);
+                      window.addEventListener("mouseup", onMouseUp);
+                    }}
+                  >
+                    <div className="w-0.5 h-5 bg-black/30 rounded-full group-hover/chip:bg-black/50" />
+                  </div>
+                )}
 
                 {/* Hover tooltip */}
                 {hoveredChipIdx === i && !isDragSource && (
@@ -454,6 +439,12 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow }: RowCellProps) 
                         <span>{staffName}</span>
                         <span>·</span>
                         <span>{timeLabel}</span>
+                        {dur > 1 && (
+                          <>
+                            <span>·</span>
+                            <span className="text-[#7c3aed] font-semibold">{dur}h duration</span>
+                          </>
+                        )}
                         {chip.status && (
                           <>
                             <span>·</span>
@@ -464,7 +455,7 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow }: RowCellProps) 
                         )}
                       </div>
                       <p className="text-[10px] text-[#6b7280] mt-1 font-['Inter',sans-serif]">
-                        Click to view · Drag to reschedule
+                        Click to view · Drag to reschedule · Drag right edge to resize
                       </p>
                     </div>
                     <div
@@ -560,12 +551,11 @@ export const CalendarSubsection = ({
   // ── Chip durations state ─────────────────────────────────────────────────────
   const [chipDurations, setChipDurations] = useState<Record<string, number>>({});
 
-  const handleDurationChange = useCallback((chipKey: string, delta: number) => {
-    setChipDurations((prev) => {
-      const current = prev[chipKey] || 1;
-      const next = Math.max(1, Math.min(current + delta, timeColumns.length));
-      return { ...prev, [chipKey]: next };
-    });
+  const handleDurationChange = useCallback((chipKey: string, absoluteDuration: number) => {
+    setChipDurations((prev) => ({
+      ...prev,
+      [chipKey]: Math.max(1, Math.min(absoluteDuration, timeColumns.length)),
+    }));
   }, []);
 
   // ── Drag state ──────────────────────────────────────────────────────────────
@@ -828,6 +818,13 @@ export const CalendarSubsection = ({
 
                 {/* Time cells */}
                 {timeColumns.map((time, ci) => {
+                  const cellKey = `${staff}||${time}`;
+
+                  // Skip cells that are "covered" by a spanning chip from a previous column
+                  if (continuationCells.has(cellKey)) {
+                    return null;
+                  }
+
                   const baseChips = (calendarData[staff]?.[time] || []).filter(
                     (_, idx) => !removedBaseChips.has(`${staff}||${time}||${idx}`)
                   );
@@ -847,16 +844,26 @@ export const CalendarSubsection = ({
                     })),
                   ];
 
+                  // Single-chip cells can span multiple columns based on duration
+                  const colSpan = allChips.length === 1
+                    ? Math.min(chipDurations[`${staff}||${time}||0`] || 1, timeColumns.length - ci)
+                    : 1;
+                  const maxCols = timeColumns.length - ci;
+
                   return (
                     <div
                       key={`${staff}-${time}`}
-                      style={{ gridColumn: ci + 2, gridRow: si + 2 }}
+                      style={{
+                        gridColumn: colSpan > 1 ? `${ci + 2} / span ${colSpan}` : ci + 2,
+                        gridRow: si + 2,
+                      }}
                     >
                       <RowCell
                         staffName={staff}
                         timeLabel={time}
                         chips={allChips}
                         isSuggestedRow={isSuggested}
+                        maxColumns={maxCols}
                       />
                     </div>
                   );

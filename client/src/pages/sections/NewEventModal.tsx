@@ -54,6 +54,7 @@ interface NewEventModalProps {
   onSave: (event: NewEventData) => void;
   onConflict: (event: NewEventData, existing: string) => void;
   prefilledSlot?: PrefilledSlot | null;
+  editEventData?: NewEventData | null;
   existingEvents?: { staffName: string; startTime: string; endTime: string }[];
 }
 
@@ -160,22 +161,47 @@ export const NewEventModal = ({
   onSave,
   onConflict,
   prefilledSlot,
+  editEventData,
   existingEvents = [],
 }: NewEventModalProps) => {
+  const isEditMode = !!editEventData;
   const [form, setForm] = useState(defaultForm(prefilledSlot));
   const [isSplitCoverage, setIsSplitCoverage] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [colorOverride, setColorOverride] = useState<{ bg: string; border: string } | null>(null);
 
-  // Re-sync form whenever modal opens or prefilledSlot changes
+  // Re-sync form whenever modal opens — use editEventData or prefilledSlot
   useEffect(() => {
     if (open) {
-      setForm(defaultForm(prefilledSlot));
+      if (editEventData) {
+        // Edit mode: pre-fill everything from the existing event
+        setForm({
+          title: editEventData.title || editEventData.reference || "",
+          reference: editEventData.reference || generateRef(),
+          date: editEventData.date || "2026-05-27",
+          startTime: editEventData.startTime || "10:00 AM",
+          endTime: editEventData.endTime || "11:00 AM",
+          staffName: editEventData.staffName || "",
+          staffName2: editEventData.staffName2 || "",
+          jobType: editEventData.jobType || "plumbing",
+          notes: editEventData.notes || "",
+          location: editEventData.location || "",
+          clientName: editEventData.clientName || "",
+          priority: editEventData.priority || "medium",
+          timezone: "UTC -06:00 Central",
+          repeat: "Never",
+          requiredAttendee: "Stephany Chandler Jr.",
+          optionalAttendee: "",
+        });
+        setColorOverride(editEventData.color || null);
+      } else {
+        setForm(defaultForm(prefilledSlot));
+        setColorOverride(null);
+      }
       setIsSplitCoverage(false);
       setErrors({});
-      setColorOverride(null);
     }
-  }, [open, prefilledSlot?.staffName, prefilledSlot?.timeLabel]);
+  }, [open, editEventData?.id, prefilledSlot?.staffName, prefilledSlot?.timeLabel]);
 
   const selectedJobType = jobTypes.find((j) => j.value === form.jobType) || jobTypes[0];
   const effectiveColor = colorOverride || selectedJobType.color;
@@ -211,11 +237,12 @@ export const NewEventModal = ({
 
   const handleSave = () => {
     if (!validate()) return;
-    const conflictMsg = existingEvents.find(
+    // In edit mode, skip conflict check (user is intentionally editing)
+    const conflictMsg = isEditMode ? null : existingEvents.find(
       (e) => e.staffName === form.staffName && e.startTime === form.startTime
     );
     const eventData: NewEventData = {
-      id: `evt-${Date.now()}`,
+      id: isEditMode ? (editEventData!.id) : `evt-${Date.now()}`,
       title: form.title,
       reference: form.reference,
       date: form.date,
@@ -254,7 +281,7 @@ export const NewEventModal = ({
         <DialogHeader className="px-6 pt-5 pb-4 border-b border-[#e8e8e8]">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-[#0e1828] text-lg font-bold font-['Inter',sans-serif]">
-              New Event
+              {isEditMode ? "Edit Event" : "New Event"}
             </DialogTitle>
             <button
               onClick={onClose}
@@ -744,7 +771,7 @@ export const NewEventModal = ({
             className="flex-1 h-10 bg-[#0065f4] hover:bg-[#0052c2] text-white font-['Inter',sans-serif] text-sm font-medium"
             data-testid="save-new-event"
           >
-            {isSplitCoverage ? "Create (Split Coverage)" : "Create Event"}
+            {isEditMode ? "Save Changes" : isSplitCoverage ? "Create (Split Coverage)" : "Create Event"}
           </Button>
         </div>
       </DialogContent>

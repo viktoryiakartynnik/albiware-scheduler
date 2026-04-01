@@ -947,9 +947,15 @@ export const CalendarSubsection = ({
                 {timeColumns.map((time, ci) => {
                   const cellKey = `${staff}||${time}`;
 
-                  // Skip cells that are "covered" by a spanning chip from a previous column
+                  // Render an empty bordered cell for columns covered by a spanning chip
                   if (continuationCells.has(cellKey)) {
-                    return null;
+                    return (
+                      <div
+                        key={`${staff}-${time}-cont`}
+                        className="border-b border-r border-[#dcdfe3] min-h-[52px]"
+                        style={{ gridColumn: ci + 2, gridRow: si + 2 }}
+                      />
+                    );
                   }
 
                   const baseChips = (calendarData[staff]?.[time] || []).filter(

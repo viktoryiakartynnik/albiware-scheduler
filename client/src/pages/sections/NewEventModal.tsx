@@ -273,20 +273,38 @@ export const NewEventModal = ({
   const selectedJobType = jobTypes.find((j) => j.value === form.jobType) || jobTypes[0];
   const effectiveColor = colorOverride || selectedJobType.color;
 
-  // Live availability: recomputes whenever startTime changes
+  // Convert "HH:MM AM/PM" → minutes from midnight
+  const timeToMin = (t: string): number => {
+    if (!t) return 0;
+    const [timePart, mer] = t.split(" ");
+    const [h, m] = timePart.split(":").map(Number);
+    let hours = h % 12;
+    if (mer === "PM") hours += 12;
+    return hours * 60 + (m || 0);
+  };
+
+  // Live availability: recomputes whenever startTime OR endTime changes
   const staffStatuses = useMemo<Record<string, StaffStatus>>(() => {
+    const selStart = timeToMin(form.startTime);
+    const selEnd   = form.endTime ? timeToMin(form.endTime) : selStart + 60;
     const result: Record<string, StaffStatus> = {};
     for (const name of staffMembers) {
-      const busy = existingEvents.some(
-        (e) => e.staffName === name && e.startTime === form.startTime
-      );
+      const busy = existingEvents.some((e) => {
+        if (e.staffName !== name) return false;
+        const evStart = timeToMin(e.startTime);
+        const evEnd   = e.endTime ? timeToMin(e.endTime) : evStart + 60;
+        return evStart < selEnd && evEnd > selStart;
+      });
       result[name] = busy ? "unavailable" : "available";
     }
     return result;
-  }, [existingEvents, form.startTime]);
+  }, [existingEvents, form.startTime, form.endTime]);
 
   const availableStaff   = staffMembers.filter((s) => staffStatuses[s] === "available");
   const unavailableStaff = staffMembers.filter((s) => staffStatuses[s] === "unavailable");
+
+  // Auto-suggest split coverage when nobody is free for the selected range
+  const allBusy = availableStaff.length === 0 && existingEvents.length > 0;
 
   // Multi-staff helpers
   const addStaff = (name: string) => {
@@ -549,7 +567,7 @@ export const NewEventModal = ({
                 {unavailableStaff.length > 0 && (
                   <> · <span className="text-[#dc2626] font-medium">{unavailableStaff.length}</span> busy</>
                 )}
-                {" "}at {form.startTime}
+                {" "}{form.startTime}–{form.endTime}
               </span>
             </div>
 
@@ -650,6 +668,27 @@ export const NewEventModal = ({
               </div>
             )}
             {errors.staffNames && <p className="text-xs text-red-500">{errors.staffNames}</p>}
+
+            {/* All-busy banner — auto-suggest split coverage */}
+            {allBusy && !splitCoverage && (
+              <div className="flex items-start gap-2 rounded-lg border border-[#fde68a] bg-[#fffbeb] px-3 py-2">
+                <span className="text-[#d97706] text-base leading-none mt-0.5">⚠</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-[#92400e] font-['Inter',sans-serif]">No staff available {form.startTime}–{form.endTime}</p>
+                  <p className="text-xs text-[#b45309] font-['Inter',sans-serif] mt-0.5">
+                    All team members are busy during this time.{" "}
+                    <button
+                      type="button"
+                      onClick={() => setSplitCoverage(true)}
+                      className="underline font-semibold hover:text-[#92400e] transition-colors"
+                    >
+                      Enable Split Coverage
+                    </button>{" "}
+                    to divide the job between staff at different sub-intervals.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Split Coverage toggle */}
             <div className="flex items-center justify-between pt-1">

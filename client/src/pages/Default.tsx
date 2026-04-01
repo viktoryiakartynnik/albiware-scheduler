@@ -265,8 +265,24 @@ export const Default = (): JSX.Element => {
       }
       setEditEventData(null);
       showSuccess(`Event updated for ${event.staffName} at ${event.startTime}`);
+    } else if (event.splitSegments && event.splitSegments.length > 0) {
+      // Split coverage: one chip per segment at its own time slot
+      const newChips: CustomEventData[] = event.splitSegments
+        .filter((seg) => seg.staffName)
+        .map((seg, i) => ({
+          id: `${event.id}-seg-${i}`,
+          staffName: seg.staffName,
+          startTime: seg.startTime,
+          title: event.title || event.reference || "",
+          color: event.color,
+          status: "new" as const,
+          projectStatus: event.projectStatus,
+        }));
+      setCustomEvents((prev) => [...prev, ...newChips]);
+      const who = newChips.map((c) => `${c.staffName} @ ${c.startTime}`).join(", ");
+      showSuccess(`Split coverage: ${newChips.length} segment${newChips.length !== 1 ? "s" : ""} — ${who}`);
     } else {
-      // Create new event — one chip per assigned staff member
+      // Create new event — one chip per assigned staff member (same time slot)
       const allStaff = event.staffNames && event.staffNames.length > 0
         ? event.staffNames
         : [event.staffName].filter(Boolean);

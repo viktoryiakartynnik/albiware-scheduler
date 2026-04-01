@@ -313,7 +313,7 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow, maxColumns }: Ro
 
   return (
     <div
-      className={`relative h-9 border-b border-r border-[#dcdfe3] overflow-visible flex items-center transition-colors ${bgClass} ${
+      className={`relative min-h-[36px] h-auto border-b border-r border-[#dcdfe3] overflow-visible flex items-center transition-colors ${bgClass} ${
         canClickSlot ? "group" : ""
       }`}
       style={{ width: "100%" }}
@@ -331,161 +331,130 @@ const RowCell = ({ staffName, timeLabel, chips, isSuggestedRow, maxColumns }: Ro
       }}
       data-testid={`cell-${staffName}-${timeLabel}`}
     >
-      {/* Chips */}
-      {chips.length > 0 && (
-        <div
-          className="flex items-center h-[33px] gap-px relative top-px pl-px"
-          style={{ width: "100%", overflow: "visible" }}
-        >
+      {/* Chips — single chip: horizontal fill; multiple chips: stacked vertically */}
+      {chips.length === 1 && (() => {
+        const chip = chips[0];
+        const chipKey = `${staffName}||${timeLabel}||0`;
+        const isDragSource = dragSourceKey === chipKey;
+        const statusBadge = chip.status ? STATUS_BADGE[chip.status] : null;
+        const dur = chipDurations[chipKey] || 1;
+        return (
+          <div className="flex items-center h-[33px] gap-px relative top-px pl-px w-full overflow-visible">
+            <div className="relative h-[33px] group/chip min-w-0" style={{ flex: 1 }}>
+              <div
+                className={`flex items-center pl-2 pr-4 pt-0.5 pb-1 overflow-hidden border-l-4 border-solid h-[33px] rounded cursor-grab transition-all duration-100 w-full select-none ${isDragSource ? "opacity-30" : ""}`}
+                style={{
+                  backgroundColor: hoveredChipIdx === 0 ? lightenColor(chip.bg) : chip.bg,
+                  borderLeftColor: chip.border,
+                  outline: hoveredChipIdx === 0 ? `2px solid ${chip.border}` : "none",
+                  outlineOffset: "-1px",
+                  boxShadow: hoveredChipIdx === 0 ? "0 2px 8px rgba(0,0,0,0.12)" : "none",
+                }}
+                draggable
+                onDragStart={(e) => { onStartDrag({ staffName, timeLabel, chipIndex: 0, chip }); e.dataTransfer.effectAllowed = "move"; }}
+                onDragEnd={onEndDrag}
+                onMouseEnter={() => setHoveredChipIdx(0)}
+                onMouseLeave={() => setHoveredChipIdx(null)}
+                onClick={(e) => { e.stopPropagation(); onChipClick(staffName, timeLabel, chip, 0); }}
+                data-testid={`chip-${staffName}-${timeLabel}-0`}
+              >
+                <div className="flex items-center gap-1 w-full min-w-0">
+                  <span className="text-[10px] font-bold text-[#252627] truncate flex-1 leading-tight pointer-events-none">{chip.label}</span>
+                  {dur > 1 && <span className="text-[8px] font-black bg-[#7c3aed] text-white px-1 rounded leading-none flex-shrink-0 pointer-events-none">{dur}h</span>}
+                  {statusBadge && <span className={`text-[7px] font-black px-0.5 rounded leading-none flex-shrink-0 pointer-events-none ${statusBadge.cls}`}>{statusBadge.label}</span>}
+                  {chip.projectStatus && chip.projectStatus !== "not_started" && (() => {
+                    const psColors: Record<string, string> = { in_progress: "#3b82f6", on_hold: "#f59e0b", completed: "#22c55e", cancelled: "#ef4444" };
+                    const c = psColors[chip.projectStatus];
+                    return c ? <span className="w-2 h-2 rounded-full flex-shrink-0 ring-1 ring-white pointer-events-none" style={{ backgroundColor: c }} /> : null;
+                  })()}
+                </div>
+              </div>
+              {/* Resize handle */}
+              <div
+                className="absolute right-0 top-0 bottom-0 w-3 z-20 flex items-center justify-center cursor-ew-resize"
+                onMouseDown={(e) => {
+                  e.preventDefault(); e.stopPropagation();
+                  const startX = e.clientX;
+                  const startDuration = chipDurations[chipKey] || 1;
+                  let lastDur = startDuration;
+                  const onMouseMove = (me: MouseEvent) => {
+                    const durDelta = Math.round((me.clientX - startX) / CELL_WIDTH);
+                    const newDur = Math.max(1, Math.min(startDuration + durDelta, maxColumns));
+                    if (newDur !== lastDur) { lastDur = newDur; onDurationChange(chipKey, newDur); }
+                  };
+                  const onMouseUp = () => { window.removeEventListener("mousemove", onMouseMove); window.removeEventListener("mouseup", onMouseUp); };
+                  window.addEventListener("mousemove", onMouseMove);
+                  window.addEventListener("mouseup", onMouseUp);
+                }}
+              >
+                <div className="w-0.5 h-5 bg-black/30 rounded-full group-hover/chip:bg-black/50" />
+              </div>
+              {/* Tooltip */}
+              {hoveredChipIdx === 0 && !isDragSource && (
+                <div className="absolute bottom-full left-0 mb-1 z-50 pointer-events-none" style={{ minWidth: 200, maxWidth: 300 }}>
+                  <div className="bg-white rounded-lg shadow-xl border border-[#e8e8e8] p-2.5" style={{ borderLeft: `3px solid ${chip.border}` }}>
+                    <p className="text-xs font-bold text-[#0e1828] leading-snug mb-1 font-['Inter',sans-serif]">{chip.label}</p>
+                    <div className="flex items-center gap-2 text-[10px] text-[#6b7280] font-['Inter',sans-serif]">
+                      <span>{staffName}</span><span>·</span><span>{timeLabel}</span>
+                      {dur > 1 && <><span>·</span><span className="text-[#7c3aed] font-semibold">{dur}h duration</span></>}
+                    </div>
+                    <p className="text-[10px] text-[#6b7280] mt-1 font-['Inter',sans-serif]">Click to view · Drag to reschedule · Drag right edge to resize</p>
+                  </div>
+                  <div className="absolute left-3 top-full w-0 h-0" style={{ borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "5px solid #e8e8e8" }} />
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Stacked chips — conflict layout */}
+      {chips.length > 1 && (
+        <div className="flex flex-col gap-px py-0.5 px-0.5 w-full">
           {chips.map((chip, i) => {
             const chipKey = `${staffName}||${timeLabel}||${i}`;
             const isDragSource = dragSourceKey === chipKey;
             const statusBadge = chip.status ? STATUS_BADGE[chip.status] : null;
-            const dur = chipDurations[chipKey] || 1;
-            const isSingleChip = chips.length === 1;
-
             return (
-              <div
-                key={i}
-                className="relative h-[33px] group/chip min-w-0"
-                style={{ flex: 1 }}
-              >
-                {/* Chip body */}
+              <div key={i} className="relative h-[26px] group/chip w-full">
                 <div
-                  className={`flex flex-col items-start justify-center pl-2 pt-0.5 pb-1 overflow-hidden border-l-4 border-solid h-[33px] rounded cursor-grab transition-all duration-100 w-full select-none ${
-                    isDragSource ? "opacity-30" : ""
-                  } ${isSingleChip ? "pr-4" : "pr-1"}`}
+                  className={`flex items-center pl-2 pr-1 overflow-hidden border-l-[3px] border-solid h-[26px] rounded cursor-grab transition-all duration-100 w-full select-none ${isDragSource ? "opacity-30" : ""}`}
                   style={{
                     backgroundColor: hoveredChipIdx === i ? lightenColor(chip.bg) : chip.bg,
                     borderLeftColor: chip.border,
-                    outline: hoveredChipIdx === i ? `2px solid ${chip.border}` : "none",
+                    outline: hoveredChipIdx === i ? `1.5px solid ${chip.border}` : "none",
                     outlineOffset: "-1px",
-                    boxShadow: hoveredChipIdx === i ? "0 2px 8px rgba(0,0,0,0.12)" : "none",
                   }}
                   draggable
-                  onDragStart={(e) => {
-                    onStartDrag({ staffName, timeLabel, chipIndex: i, chip });
-                    e.dataTransfer.effectAllowed = "move";
-                  }}
+                  onDragStart={(e) => { onStartDrag({ staffName, timeLabel, chipIndex: i, chip }); e.dataTransfer.effectAllowed = "move"; }}
                   onDragEnd={onEndDrag}
                   onMouseEnter={() => setHoveredChipIdx(i)}
                   onMouseLeave={() => setHoveredChipIdx(null)}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onChipClick(staffName, timeLabel, chip, i);
-                  }}
+                  onClick={(e) => { e.stopPropagation(); onChipClick(staffName, timeLabel, chip, i); }}
                   data-testid={`chip-${staffName}-${timeLabel}-${i}`}
                 >
                   <div className="flex items-center gap-1 w-full min-w-0">
-                    <span className="text-[10px] font-bold text-[#252627] truncate flex-1 leading-tight pointer-events-none">
-                      {chip.label}
-                    </span>
-                    {dur > 1 && (
-                      <span className="text-[8px] font-black bg-[#7c3aed] text-white px-1 rounded leading-none flex-shrink-0 pointer-events-none">
-                        {dur}h
-                      </span>
-                    )}
-                    {statusBadge && (
-                      <span className={`text-[7px] font-black px-0.5 rounded leading-none flex-shrink-0 pointer-events-none ${statusBadge.cls}`}>
-                        {statusBadge.label}
-                      </span>
-                    )}
+                    <span className="text-[9px] font-bold text-[#252627] truncate flex-1 leading-none pointer-events-none">{chip.label}</span>
+                    {statusBadge && <span className={`text-[7px] font-black px-0.5 rounded leading-none flex-shrink-0 pointer-events-none ${statusBadge.cls}`}>{statusBadge.label}</span>}
                     {chip.projectStatus && chip.projectStatus !== "not_started" && (() => {
-                      const psColors: Record<string, string> = {
-                        in_progress: "#3b82f6",
-                        on_hold: "#f59e0b",
-                        completed: "#22c55e",
-                        cancelled: "#ef4444",
-                      };
-                      const color = psColors[chip.projectStatus];
-                      return color ? (
-                        <span
-                          className="w-2 h-2 rounded-full flex-shrink-0 ring-1 ring-white pointer-events-none"
-                          style={{ backgroundColor: color }}
-                          title={chip.projectStatus.replace("_", " ")}
-                        />
-                      ) : null;
+                      const psColors: Record<string, string> = { in_progress: "#3b82f6", on_hold: "#f59e0b", completed: "#22c55e", cancelled: "#ef4444" };
+                      const c = psColors[chip.projectStatus];
+                      return c ? <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 pointer-events-none" style={{ backgroundColor: c }} /> : null;
                     })()}
                   </div>
                 </div>
-
-                {/* Drag-to-resize handle — right edge of single chips only */}
-                {isSingleChip && (
-                  <div
-                    className="absolute right-0 top-0 bottom-0 w-3 z-20 flex items-center justify-center cursor-ew-resize"
-                    title="Drag to change duration"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      const startX = e.clientX;
-                      const startDuration = chipDurations[chipKey] || 1;
-                      let lastDur = startDuration;
-
-                      const onMouseMove = (me: MouseEvent) => {
-                        const deltaX = me.clientX - startX;
-                        const durDelta = Math.round(deltaX / CELL_WIDTH);
-                        const newDur = Math.max(1, Math.min(startDuration + durDelta, maxColumns));
-                        if (newDur !== lastDur) {
-                          lastDur = newDur;
-                          onDurationChange(chipKey, newDur);
-                        }
-                      };
-                      const onMouseUp = () => {
-                        window.removeEventListener("mousemove", onMouseMove);
-                        window.removeEventListener("mouseup", onMouseUp);
-                      };
-                      window.addEventListener("mousemove", onMouseMove);
-                      window.addEventListener("mouseup", onMouseUp);
-                    }}
-                  >
-                    <div className="w-0.5 h-5 bg-black/30 rounded-full group-hover/chip:bg-black/50" />
-                  </div>
-                )}
-
-                {/* Hover tooltip */}
+                {/* Tooltip */}
                 {hoveredChipIdx === i && !isDragSource && (
-                  <div
-                    className="absolute bottom-full left-0 mb-1 z-50 pointer-events-none"
-                    style={{ minWidth: 200, maxWidth: 300 }}
-                  >
-                    <div
-                      className="bg-white rounded-lg shadow-xl border border-[#e8e8e8] p-2.5"
-                      style={{ borderLeft: `3px solid ${chip.border}` }}
-                    >
-                      <p className="text-xs font-bold text-[#0e1828] leading-snug mb-1 font-['Inter',sans-serif]">
-                        {chip.label}
-                      </p>
+                  <div className="absolute bottom-full left-0 mb-1 z-50 pointer-events-none" style={{ minWidth: 200, maxWidth: 300 }}>
+                    <div className="bg-white rounded-lg shadow-xl border border-[#e8e8e8] p-2.5" style={{ borderLeft: `3px solid ${chip.border}` }}>
+                      <p className="text-xs font-bold text-[#0e1828] leading-snug mb-1 font-['Inter',sans-serif]">{chip.label}</p>
                       <div className="flex items-center gap-2 text-[10px] text-[#6b7280] font-['Inter',sans-serif]">
-                        <span>{staffName}</span>
-                        <span>·</span>
-                        <span>{timeLabel}</span>
-                        {dur > 1 && (
-                          <>
-                            <span>·</span>
-                            <span className="text-[#7c3aed] font-semibold">{dur}h duration</span>
-                          </>
-                        )}
-                        {chip.status && (
-                          <>
-                            <span>·</span>
-                            <span className={`px-1 py-0.5 rounded text-[8px] font-bold ${STATUS_BADGE[chip.status].cls}`}>
-                              {STATUS_BADGE[chip.status].label}
-                            </span>
-                          </>
-                        )}
+                        <span>{staffName}</span><span>·</span><span>{timeLabel}</span>
+                        <span>·</span><span className="text-[#ef4444] font-semibold">Conflict ({i + 1}/{chips.length})</span>
                       </div>
-                      <p className="text-[10px] text-[#6b7280] mt-1 font-['Inter',sans-serif]">
-                        Click to view · Drag to reschedule · Drag right edge to resize
-                      </p>
+                      <p className="text-[10px] text-[#6b7280] mt-1 font-['Inter',sans-serif]">Click to view · Drag to move · Click ! to resolve conflict</p>
                     </div>
-                    <div
-                      className="absolute left-3 top-full w-0 h-0"
-                      style={{
-                        borderLeft: "5px solid transparent",
-                        borderRight: "5px solid transparent",
-                        borderTop: "5px solid #e8e8e8",
-                      }}
-                    />
+                    <div className="absolute left-3 top-full w-0 h-0" style={{ borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "5px solid #e8e8e8" }} />
                   </div>
                 )}
               </div>

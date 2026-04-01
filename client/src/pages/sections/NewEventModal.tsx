@@ -1,7 +1,8 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
   X, Calendar, Clock, User, Briefcase, FileText,
-  CheckCircle2, XCircle, Users, MapPin, Star, Contact
+  CheckCircle2, XCircle, Users, MapPin, Star, Contact,
+  ChevronDown, Split,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,12 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 
+export interface SplitSegment {
+  startTime: string;
+  endTime: string;
+  staffName: string;
+}
+
 export interface NewEventData {
   id: string;
   title: string;
@@ -42,6 +49,7 @@ export interface NewEventData {
   projectStatus?: string;
   color: { bg: string; border: string };
   isSplitCoverage?: boolean;
+  splitSegments?: SplitSegment[];
 }
 
 export interface PrefilledSlot {
@@ -54,10 +62,11 @@ interface NewEventModalProps {
   open: boolean;
   onClose: () => void;
   onSave: (event: NewEventData) => void;
-  onConflict: (event: NewEventData, existing: string) => void;
+  onConflict?: (event: NewEventData, existing: string) => void;
   prefilledSlot?: PrefilledSlot | null;
   editEventData?: NewEventData | null;
   existingEvents?: { staffName: string; startTime: string; endTime: string }[];
+  defaultSplitCoverage?: boolean;
 }
 
 const staffMembers = [
@@ -172,11 +181,35 @@ export const NewEventModal = ({
   prefilledSlot,
   editEventData,
   existingEvents = [],
+  defaultSplitCoverage = false,
 }: NewEventModalProps) => {
   const isEditMode = !!editEventData;
   const [form, setForm] = useState(defaultForm(prefilledSlot));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [colorOverride, setColorOverride] = useState<{ bg: string; border: string } | null>(null);
+
+  // Staff dropdown (inline multi-select)
+  const staffDropdownRef = useRef<HTMLDivElement>(null);
+  const [staffDropdownOpen, setStaffDropdownOpen] = useState(false);
+
+  // Split coverage
+  const [splitCoverage, setSplitCoverage] = useState(defaultSplitCoverage);
+  const [splitSegments, setSplitSegments] = useState<SplitSegment[]>([
+    { startTime: "10:00 AM", endTime: "11:00 AM", staffName: "" },
+    { startTime: "11:00 AM", endTime: "12:00 PM", staffName: "" },
+  ]);
+
+  // Close staff dropdown on outside click
+  useEffect(() => {
+    if (!staffDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (!staffDropdownRef.current?.contains(e.target as Node)) {
+        setStaffDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [staffDropdownOpen]);
 
   // Re-sync form whenever modal opens — use editEventData or prefilledSlot
   useEffect(() => {
@@ -203,13 +236,39 @@ export const NewEventModal = ({
           optionalAttendee: "",
         });
         setColorOverride(editEventData.color || null);
+        if (editEventData.splitSegments && editEventData.splitSegments.length > 0) {
+          setSplitCoverage(true);
+          setSplitSegments(editEventData.splitSegments);
+        } else {
+          setSplitCoverage(defaultSplitCoverage);
+        }
       } else {
         setForm(defaultForm(prefilledSlot));
         setColorOverride(null);
+        setSplitCoverage(defaultSplitCoverage);
+        setSplitSegments([
+          { startTime: prefilledSlot?.timeLabel || "10:00 AM", endTime: "11:00 AM", staffName: "" },
+          { startTime: "11:00 AM", endTime: "12:00 PM", staffName: "" },
+        ]);
       }
       setErrors({});
+      setStaffDropdownOpen(false);
     }
   }, [open, editEventData?.id, prefilledSlot?.staffName, prefilledSlot?.timeLabel]);
+
+  // Split coverage helpers
+  const addSplitSegment = () => {
+    const last = splitSegments[splitSegments.length - 1];
+    const nextIdx = timeOptions.indexOf(last.endTime);
+    const nextEnd = timeOptions[nextIdx + 1] || last.endTime;
+    setSplitSegments((prev) => [...prev, { startTime: last.endTime, endTime: nextEnd, staffName: "" }]);
+  };
+  const removeSplitSegment = (idx: number) => {
+    setSplitSegments((prev) => prev.filter((_, i) => i !== idx));
+  };
+  const updateSegment = (idx: number, key: keyof SplitSegment, value: string) => {
+    setSplitSegments((prev) => prev.map((seg, i) => i === idx ? { ...seg, [key]: value } : seg));
+  };
 
   const selectedJobType = jobTypes.find((j) => j.value === form.jobType) || jobTypes[0];
   const effectiveColor = colorOverride || selectedJobType.color;
@@ -243,9 +302,14 @@ export const NewEventModal = ({
   const validate = () => {
     const errs: Record<string, string> = {};
     if (!form.title.trim()) errs.title = "Job title is required";
-    if (form.staffNames.length === 0) errs.staffNames = "At least one staff member is required";
-    if (!form.startTime)    errs.startTime = "Start time is required";
-    if (!form.endTime)      errs.endTime = "End time is required";
+    if (splitCoverage) {
+      if (!splitSegments.some((s) => s.staffName))
+        errs.staffNames = "At least one segment must have a staff member";
+    } else {
+      if (form.staffNames.length === 0) errs.staffNames = "At least one staff member is required";
+    }
+    if (!form.startTime) errs.startTime = "Start time is required";
+    if (!form.endTime)   errs.endTime   = "End time is required";
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -253,10 +317,6 @@ export const NewEventModal = ({
   const handleSave = () => {
     if (!validate()) return;
     const primaryStaff = form.staffNames[0] || "";
-    // In edit mode, skip conflict check
-    const conflictMsg = isEditMode ? null : existingEvents.find(
-      (e) => e.staffName === primaryStaff && e.startTime === form.startTime
-    );
     const eventData: NewEventData = {
       id: isEditMode ? (editEventData!.id) : `evt-${Date.now()}`,
       title: form.title,
@@ -273,13 +333,11 @@ export const NewEventModal = ({
       priority: form.priority,
       projectStatus: form.projectStatus,
       color: effectiveColor,
+      splitSegments: splitCoverage ? splitSegments.filter((s) => s.staffName) : undefined,
     };
-    if (conflictMsg) {
-      onConflict(eventData, `${primaryStaff} already has an event at ${form.startTime}`);
-    } else {
-      onSave(eventData);
-      onClose();
-    }
+    // Always save — conflicts are shown visually as stacked chips in the grid
+    onSave(eventData);
+    onClose();
   };
 
   const f = (key: keyof typeof form, val: string) => {
@@ -482,105 +540,221 @@ export const NewEventModal = ({
 
           {/* ── Staff Assignment ── */}
           <div className="space-y-2">
-            <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif]">
-              Assign Staff <span className="text-red-500">*</span>
-            </Label>
-
-            {/* Live availability count */}
-            <div className="flex items-center gap-3 text-xs font-['Inter',sans-serif]">
-              <span className="flex items-center gap-1.5 text-[#15803d]">
-                <span className="w-2 h-2 rounded-full bg-[#22c55e] inline-block" />
-                {availableStaff.length} available at {form.startTime}
+            <div className="flex items-center justify-between">
+              <Label className="text-[#344153] text-sm font-semibold font-['Inter',sans-serif]">
+                Assign Staff <span className="text-red-500">*</span>
+              </Label>
+              <span className="text-xs text-[#9ca3af] font-['Inter',sans-serif]">
+                <span className="text-[#15803d] font-medium">{availableStaff.length}</span> available
+                {unavailableStaff.length > 0 && (
+                  <> · <span className="text-[#dc2626] font-medium">{unavailableStaff.length}</span> busy</>
+                )}
+                {" "}at {form.startTime}
               </span>
-              {unavailableStaff.length > 0 && (
-                <span className="flex items-center gap-1.5 text-[#dc2626]">
-                  <span className="w-2 h-2 rounded-full bg-[#ef4444] inline-block" />
-                  {unavailableStaff.length} busy
-                </span>
-              )}
             </div>
 
-            {/* Selected staff tags */}
-            {form.staffNames.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {form.staffNames.map((name) => {
-                  const st = staffStatuses[name];
-                  return (
-                    <div
-                      key={name}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border ${
-                        st === "available"
-                          ? "bg-[#f0fdf4] text-[#15803d] border-[#bbf7d0]"
-                          : "bg-[#fff1f1] text-[#dc2626] border-[#fecaca]"
-                      }`}
-                    >
-                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${st === "available" ? "bg-[#22c55e]" : "bg-[#ef4444]"}`} />
-                      {name}
-                      <button
-                        onClick={() => removeStaff(name)}
-                        className="ml-0.5 opacity-60 hover:opacity-100"
-                        data-testid={`remove-staff-${name}`}
+            {/* Inline multi-select — tags inside the trigger */}
+            {!splitCoverage && (
+              <div ref={staffDropdownRef} className="relative">
+                <div
+                  className={`min-h-[40px] border rounded-md flex flex-wrap items-center gap-1.5 px-3 py-1.5 cursor-pointer bg-white transition-colors ${
+                    staffDropdownOpen
+                      ? "border-[#93b9f9]"
+                      : errors.staffNames
+                      ? "border-red-400"
+                      : "border-[#dedede]"
+                  }`}
+                  onClick={() => setStaffDropdownOpen((o) => !o)}
+                  data-testid="new-event-staff-select"
+                >
+                  {form.staffNames.map((name) => {
+                    const st = staffStatuses[name];
+                    return (
+                      <span
+                        key={name}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold border flex-shrink-0 ${
+                          st === "available"
+                            ? "bg-[#f0fdf4] text-[#15803d] border-[#bbf7d0]"
+                            : "bg-[#fff1f1] text-[#dc2626] border-[#fecaca]"
+                        }`}
                       >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  );
-                })}
+                        <span className={`w-1.5 h-1.5 rounded-full ${st === "available" ? "bg-[#22c55e]" : "bg-[#ef4444]"}`} />
+                        {name}
+                        <button
+                          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); removeStaff(name); }}
+                          className="ml-0.5 opacity-60 hover:opacity-100"
+                          data-testid={`remove-staff-${name}`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    );
+                  })}
+                  {form.staffNames.length === 0 ? (
+                    <span className="text-sm text-[#9ca3af] font-['Inter',sans-serif]">Select staff member…</span>
+                  ) : (
+                    <span className="text-xs text-[#9ca3af] font-['Inter',sans-serif]">+ add more</span>
+                  )}
+                  <ChevronDown className={`w-4 h-4 text-[#9ca3af] ml-auto flex-shrink-0 transition-transform ${staffDropdownOpen ? "rotate-180" : ""}`} />
+                </div>
+
+                {/* Dropdown panel */}
+                {staffDropdownOpen && (
+                  <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-[#e8e8e8] rounded-md shadow-lg max-h-[260px] overflow-y-auto">
+                    {availableStaff.filter((s) => !form.staffNames.includes(s)).length > 0 && (
+                      <div className="px-2 pt-2 pb-1">
+                        <p className="text-[10px] font-bold text-[#15803d] uppercase tracking-wide px-2 pb-1 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e]" />
+                          Available ({availableStaff.filter((s) => !form.staffNames.includes(s)).length})
+                        </p>
+                        {availableStaff.filter((s) => !form.staffNames.includes(s)).map((s) => (
+                          <button
+                            key={s}
+                            className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-[#f0fdf4] rounded-md text-left"
+                            onMouseDown={(e) => { e.preventDefault(); addStaff(s); }}
+                            data-testid={`staff-option-${s}`}
+                          >
+                            <span className="w-2 h-2 rounded-full bg-[#22c55e] flex-shrink-0" />
+                            <span className="text-sm font-medium text-[#0e1828] font-['Inter',sans-serif]">{s}</span>
+                            <CheckCircle2 className="w-3.5 h-3.5 text-[#22c55e] ml-auto" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {unavailableStaff.filter((s) => !form.staffNames.includes(s)).length > 0 && (
+                      <>
+                        {availableStaff.filter((s) => !form.staffNames.includes(s)).length > 0 && (
+                          <div className="border-t border-[#e8e8e8] mx-2" />
+                        )}
+                        <div className="px-2 pt-1 pb-2">
+                          <p className="text-[10px] font-bold text-[#dc2626] uppercase tracking-wide px-2 pb-1 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#ef4444]" />
+                            Busy ({unavailableStaff.filter((s) => !form.staffNames.includes(s)).length})
+                          </p>
+                          {unavailableStaff.filter((s) => !form.staffNames.includes(s)).map((s) => (
+                            <button
+                              key={s}
+                              className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-[#fff1f1] rounded-md text-left"
+                              onMouseDown={(e) => { e.preventDefault(); addStaff(s); }}
+                            >
+                              <span className="w-2 h-2 rounded-full bg-[#ef4444] flex-shrink-0" />
+                              <span className="text-sm font-medium text-[#6b7280] line-through font-['Inter',sans-serif]">{s}</span>
+                              <XCircle className="w-3.5 h-3.5 text-[#ef4444] ml-auto" />
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             )}
-
-            {/* Add staff dropdown */}
-            <Select
-              value=""
-              onValueChange={(v) => addStaff(v)}
-            >
-              <SelectTrigger
-                className={`h-10 text-sm font-['Inter',sans-serif] ${errors.staffNames ? "border-red-400" : "border-[#dedede]"}`}
-                data-testid="new-event-staff-select"
-              >
-                <SelectValue placeholder={form.staffNames.length === 0 ? "Select staff member…" : "Add another staff member…"} />
-              </SelectTrigger>
-              <SelectContent className="max-h-[280px]">
-                {availableStaff.filter((s) => !form.staffNames.includes(s)).length > 0 && (
-                  <SelectGroup>
-                    <SelectLabel className="text-xs font-bold text-[#15803d] flex items-center gap-1.5 py-1.5">
-                      <span className="w-2 h-2 rounded-full bg-[#22c55e] inline-block" />
-                      Available ({availableStaff.filter((s) => !form.staffNames.includes(s)).length})
-                    </SelectLabel>
-                    {availableStaff.filter((s) => !form.staffNames.includes(s)).map((s) => (
-                      <SelectItem key={s} value={s} className="cursor-pointer">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-[#22c55e] flex-shrink-0" />
-                          <span className="font-medium text-[#0e1828]">{s}</span>
-                          <CheckCircle2 className="w-3 h-3 text-[#22c55e] ml-auto" />
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                )}
-                {unavailableStaff.filter((s) => !form.staffNames.includes(s)).length > 0 && (
-                  <>
-                    <Separator className="my-1" />
-                    <SelectGroup>
-                      <SelectLabel className="text-xs font-bold text-[#dc2626] flex items-center gap-1.5 py-1.5">
-                        <span className="w-2 h-2 rounded-full bg-[#ef4444] inline-block" />
-                        Busy ({unavailableStaff.filter((s) => !form.staffNames.includes(s)).length})
-                      </SelectLabel>
-                      {unavailableStaff.filter((s) => !form.staffNames.includes(s)).map((s) => (
-                        <SelectItem key={s} value={s} className="cursor-pointer opacity-60">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-[#ef4444] flex-shrink-0" />
-                            <span className="font-medium text-[#6b7280] line-through">{s}</span>
-                            <XCircle className="w-3 h-3 text-[#ef4444] ml-auto" />
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </>
-                )}
-              </SelectContent>
-            </Select>
             {errors.staffNames && <p className="text-xs text-red-500">{errors.staffNames}</p>}
+
+            {/* Split Coverage toggle */}
+            <div className="flex items-center justify-between pt-1">
+              <button
+                type="button"
+                onClick={() => setSplitCoverage((v) => !v)}
+                className={`flex items-center gap-2 text-xs font-semibold font-['Inter',sans-serif] transition-colors ${
+                  splitCoverage ? "text-[#0065f4]" : "text-[#6b7280] hover:text-[#344153]"
+                }`}
+                data-testid="split-coverage-toggle"
+              >
+                <Split className="w-3.5 h-3.5" />
+                Split Coverage
+              </button>
+              <button
+                type="button"
+                onClick={() => setSplitCoverage((v) => !v)}
+                className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${splitCoverage ? "bg-[#0065f4]" : "bg-[#d1d5db]"}`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${splitCoverage ? "translate-x-4" : ""}`} />
+              </button>
+            </div>
+
+            {/* Split Coverage segments */}
+            {splitCoverage && (
+              <div className="rounded-lg border border-[#e2e5e9] bg-[#f8f9fa] p-3 space-y-2">
+                <p className="text-xs text-[#6b7280] font-['Inter',sans-serif]">
+                  Assign different staff for each time segment. Each creates a separate chip in the grid.
+                </p>
+                {splitSegments.map((seg, idx) => (
+                  <div key={idx} className="bg-white border border-[#e8e8e8] rounded-lg p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-[#344153] font-['Inter',sans-serif]">Segment {idx + 1}</span>
+                      {splitSegments.length > 2 && (
+                        <button onClick={() => removeSplitSegment(idx)} className="text-[#ef4444] hover:opacity-70 transition-opacity">
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-[10px] text-[#9ca3af] font-['Inter',sans-serif] uppercase tracking-wide">From</Label>
+                        <Select value={seg.startTime} onValueChange={(v) => updateSegment(idx, "startTime", v)}>
+                          <SelectTrigger className="h-8 text-xs border-[#dedede] font-['Inter',sans-serif]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {timeOptions.map((t) => <SelectItem key={t} value={t} className="text-xs">{t}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[10px] text-[#9ca3af] font-['Inter',sans-serif] uppercase tracking-wide">To</Label>
+                        <Select value={seg.endTime} onValueChange={(v) => updateSegment(idx, "endTime", v)}>
+                          <SelectTrigger className="h-8 text-xs border-[#dedede] font-['Inter',sans-serif]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {timeOptions.map((t) => <SelectItem key={t} value={t} className="text-xs">{t}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] text-[#9ca3af] font-['Inter',sans-serif] uppercase tracking-wide">Staff member</Label>
+                      <Select value={seg.staffName} onValueChange={(v) => updateSegment(idx, "staffName", v)}>
+                        <SelectTrigger className={`h-8 text-xs border-[#dedede] font-['Inter',sans-serif] ${!seg.staffName ? "text-[#9ca3af]" : ""}`}>
+                          <SelectValue placeholder="Select staff…" />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-[200px]">
+                          {availableStaff.map((s) => (
+                            <SelectItem key={s} value={s} className="text-xs">
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e]" />
+                                {s}
+                              </div>
+                            </SelectItem>
+                          ))}
+                          {unavailableStaff.length > 0 && (
+                            <>
+                              <Separator className="my-1" />
+                              {unavailableStaff.map((s) => (
+                                <SelectItem key={s} value={s} className="text-xs opacity-60">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[#ef4444]" />
+                                    {s}
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                ))}
+                <button
+                  onClick={addSplitSegment}
+                  className="w-full py-2 text-xs text-[#0065f4] border border-dashed border-[#93b9f9] rounded-lg hover:bg-[#f0f7ff] transition-colors font-['Inter',sans-serif] font-medium"
+                  data-testid="add-split-segment"
+                >
+                  + Add Segment
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Optional Attendee */}
